@@ -4,7 +4,7 @@ import time
 
 class ominibothv:
     def __init__(self,
-                 port = '/dev/ominibot',
+                 port = '/dev/ttyUSB0',
                  baud = 115200,
                  divisor_mode = 4,
                  motor_direct = 0,
@@ -173,7 +173,7 @@ def quaternion_to_euler(q):
 if __name__ == '__main__':
     import time
     pi = ominibothv(
-        port = 'COM22',
+        port = '/dev/ttyUSB0',
         baud = 115200,
         divisor_mode = 4,
         motor_direct = 0,
