@@ -1,0 +1,6 @@
+# SolidWorks lock files
+~$*
+
+# SolidWorks backup files
+*.swp
+*.bak
