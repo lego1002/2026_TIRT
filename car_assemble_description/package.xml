@@ -12,10 +12,17 @@ for the car_assemble robot</p>
   <license>BSD</license>
   <buildtool_depend>ament_cmake</buildtool_depend>
   <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>joint_state_publisher</exec_depend>
   <exec_depend>joint_state_publisher_gui</exec_depend>
   <exec_depend>rviz2</exec_depend>
   <exec_depend>gazebo_ros</exec_depend>
   <exec_depend>xacro</exec_depend>
+  <!-- robot_bringup.launch.py 整合光達 + SLAM(這兩包在 ~/ros2_ws,Pi 端才需要) -->
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>my_robot_lidar</exec_depend>
+  <exec_depend>sllidar_ros2</exec_depend>
+  <exec_depend>slam_toolbox</exec_depend>
+  <exec_depend>ominibot_driver</exec_depend>
   <export>
     <build_type>ament_cmake</build_type>
   </export>

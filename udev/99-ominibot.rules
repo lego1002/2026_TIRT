@@ -1,0 +1,4 @@
+# OminiBotHV 底盤板 (FTDI FT230X USB-UART) 固定綁定成 /dev/ominibot
+# 用序號比對,和光達的 /dev/rplidar (CP210x) 分屬不同晶片,插拔誰先誰後都不會搶埠。
+# 安裝:sudo cp udev/99-ominibot.rules /etc/udev/rules.d/ && sudo udevadm control --reload-rules && sudo udevadm trigger
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6015", ATTRS{serial}=="DN01FHGS", SYMLINK+="ominibot", MODE="0666"

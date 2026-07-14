@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  Fast DDS 只走區網介面(wlan0 = 192.168.50.9)+ localhost,排除 tailscale0(100.x)。
+
+  為什麼要這個:Pi 同時有 wlan0 與 tailscale0 兩個介面。預設 Fast DDS 會把兩個 IP
+  都當作 locator 公告出去,ros2 topic list 這種小 discovery 封包兩條路都通(所以「看得到
+  topic」),但 /robot_description、/tf、/map 這類大樣本一旦被對方走 tailscale(MTU 1280)
+  傳,就會分片掉包 → RViz 收不到 TF → 整個畫面空白。把 DDS 綁死在 LAN 就解決。
+
+  用法(已寫進 ~/.bashrc):
+    export FASTRTPS_DEFAULT_PROFILES_FILE=/home/lego/2026_TIRT/dds/fastdds_lan.xml
+
+  注意:<address> 是這台的 LAN IP。wlan0 是 DHCP,IP 若變動要改這裡,
+  建議在路由器上幫 Pi 綁 DHCP 固定 IP(reservation)一勞永逸。
+  PC 端要複製這個檔並把 address 改成「PC 自己的 LAN IP」。
+-->
+<dds xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+    <profiles>
+        <transport_descriptors>
+            <transport_descriptor>
+                <transport_id>lan_transport</transport_id>
+                <type>UDPv4</type>
+                <interfaceWhiteList>
+                    <address>172.20.10.10</address>
+                    <address>127.0.0.1</address>
+                </interfaceWhiteList>
+            </transport_descriptor>
+        </transport_descriptors>
+        <participant profile_name="lan_participant" is_default_profile="true">
+            <rtps>
+                <userTransports>
+                    <transport_id>lan_transport</transport_id>
+                </userTransports>
+                <useBuiltinTransports>false</useBuiltinTransports>
+            </rtps>
+        </participant>
+    </profiles>
+</dds>

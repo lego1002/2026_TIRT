@@ -42,6 +42,17 @@ human-editable text.
     `joint_state_publisher_gui`, and Gazebo Classic spawn via `gazebo_ros`/`spawn_entity.py`). See
     `urdf閱讀方法.md`'s "ROS 2 轉換" and "套件改名" sections for the full conversion/rename rationale and what
     was dropped (the ROS 1 `/calibrated` rostopic-pub step has no ROS 2 equivalent and was removed).
+  - `launch/robot_bringup.launch.py` — the **real** on-robot entry point (headless, GUI-free), meant to run on
+    the Raspberry Pi. It brings up `robot_state_publisher` + a non-GUI `joint_state_publisher` (zeros the four
+    wheel joints so their TFs exist) + the RPLidar driver + SLAM Toolbox (async), plus a temporary fake
+    `odom->base_link` static TF. Two launch args: `use_slam` (default true) and `use_fake_odom` (default true,
+    flip to false once a real chassis driver publishes `/odom`). It `IncludeLaunchDescription`s
+    `my_robot_lidar`'s `lidar_start.launch.py` and reads that package's `mapper_params_online_async.yaml` —
+    so it depends on packages **outside this repo** (see "Runtime deployment" below).
+  - `rviz/view_robot.rviz` — saved RViz2 config for the **PC-side viewer** in the two-machine setup (Fixed
+    Frame `map`, RobotModel on `/robot_description`, LaserScan `/scan`, Map `/map` with Durability set to
+    **Transient Local** to receive the latched map, TF on). Note this is distinct from `display.launch.py`,
+    which still ships no saved config and needs its displays added by hand.
 - `OminiBotHV-master/` — vendor (CircusPi) driver package for the OminiBotHV motor/IMU controller board.
   - `example/OminiBot_HV_Meca.py` — reference Python driver (`ominibothv` class) showing the serial protocol:
     frames are `\x7b <cmd> ... <bcc> \x7d` with a big-endian XOR checksum (`calculate_bcc`). Key methods:
@@ -49,6 +60,23 @@ human-editable text.
     `read_robot_data()` (velocity + IMU quaternion + battery voltage feedback frame).
   - `firmware/` — prebuilt STM32F1 `.hex` firmware for the board (not built from source in this repo).
   - `communication/` — PDF spec for the serial protocol used by the driver above.
+- `ominibot_driver/` — the actual ROS 2 (`ament_python`) driver node wrapping the board (written 2026-07-13;
+  symlinked into `~/ros2_ws/src/` like `car_assemble_description`). `ominibot_driver/ominibot_hv.py` is a
+  self-contained, de-duplicated copy of the vendor protocol class (so the package doesn't depend on the
+  `OminiBotHV-master/example` path) — **keep the `time.sleep()` delays in its `__init__`**: without the 0.5s
+  after `forced_stop` and 0.1s between config frames the firmware never starts streaming feedback (verified on
+  hardware). `driver_node.py` subscribes `/cmd_vel` → `robot_speed(lx,ly,az)` (with a watchdog that zeros the
+  base after `cmd_vel_timeout`), and a background read thread dead-reckons `/odom` + broadcasts
+  `odom->base_link` TF from the board's body-velocity feedback, and publishes the IMU quaternion on `/imu`
+  (accel/gyro layout unverified, so left out). Odom is integrated from velocity (not IMU heading) to keep the
+  `odom` frame smooth for slam_toolbox. Default port is `/dev/ominibot` (see `udev/99-ominibot.rules`).
+- `dds/fastdds_lan.xml` — Fast DDS profile that whitelists only the LAN interface + localhost. Pointed to via
+  `FASTRTPS_DEFAULT_PROFILES_FILE`. Its `<address>` is per-machine (the local LAN IP) — edit it for each host.
+- `udev/99-rplidar.rules` — udev rule binding the RPLidar C1 (CP2102N, VID 10c4 / PID ea60) to `/dev/rplidar`
+  by USB serial, so a future chassis board on another CP210x adapter won't steal the port. Install per the
+  header comment (`cp` to `/etc/udev/rules.d/`, reload, trigger).
+- `雙機RViz連線.md` — the definitive runbook (Chinese) for the two-machine visualization workflow; read it
+  before touching bringup, DDS, or RViz-connectivity issues.
 - `urdf閱讀方法.md` — running notes (in Chinese) on how to validate/view the URDF and known open issues; check
   this file for the current TODO list before doing further URDF work (e.g. missing wheel `<limit>` tags, and
   a `rear_left_wheel_joint` origin RPY that differs from the other three wheels — harmless mathematically
@@ -83,3 +111,30 @@ stubs before a `colcon build`/RViz session: `git lfs ls-files` should list the `
 Before adding `ros2_control`/Gazebo joint dynamics, the four `continuous` wheel joints currently have no
 `<limit effort="" velocity=""/>` — this needs to be filled in from the N20 motor's actual effort/velocity
 figures, not left as a placeholder.
+
+## Runtime deployment (two-machine setup)
+
+The live robot runs **split across two machines** talking over ROS 2 DDS — `雙機RViz連線.md` is the full
+runbook; the essentials:
+
+- **Raspberry Pi = headless backend** (the robot). Runs `robot_bringup.launch.py` — model TF, lidar `/scan`,
+  SLAM `/map`, fake odom. It never opens a GUI.
+- **Ubuntu PC = viewer only.** Runs `rviz2 -d .../view_robot.rviz`. It must have `car_assemble_description`
+  built locally (so `package://` mesh paths resolve for RobotModel) but does **not** need lidar/SLAM packages.
+
+`car_assemble_description` is not self-contained at runtime: `robot_bringup.launch.py` depends on
+`my_robot_lidar`, `sllidar_ros2`, and `slam_toolbox`, which live in the ROS 2 workspace (`~/ros2_ws/src/`),
+**not in this git repo** — plus `ominibot_driver`, which *is* in this repo (symlinked into the workspace).
+`robot_bringup.launch.py` launches `ominibot_driver` when `use_fake_odom:=false` and the fake static
+`odom->base_link` TF otherwise; the two are mutually exclusive (both publish that same TF). The package is symlinked into `~/ros2_ws/src/` and built with
+`colcon build --symlink-install`, so editing `launch/`, `rviz/`, `config/` needs no rebuild; only
+`package.xml`/`CMakeLists.txt` changes do.
+
+Both machines must share `ROS_DOMAIN_ID`, set `ROS_LOCALHOST_ONLY=0`, and point
+`FASTRTPS_DEFAULT_PROFILES_FILE` at their own copy of `dds/fastdds_lan.xml`. **The DDS LAN whitelist is not
+optional here:** the Pi has both `wlan0` and `tailscale0`, and without pinning DDS to the LAN, large samples
+(`/robot_description`, `/tf`, `/map`) get routed over tailscale's 1280-MTU link and fragment-drop — `ros2
+topic list` still shows the topics (small discovery packets get through) but RViz stays blank. When debugging
+connectivity, "topic appears in `list`" ≠ "data is arriving"; confirm with `ros2 topic echo
+/robot_description --once` actually printing. Set RViz Fixed Frame to `base_link` first (SLAM takes ~10-15s to
+create the `map` frame; `map` before then reads as a blank "does not exist" screen).

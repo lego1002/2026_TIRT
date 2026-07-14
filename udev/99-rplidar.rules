@@ -1,0 +1,5 @@
+# RPLidar C1 (CP2102N USB-UART) 固定綁定成 /dev/rplidar
+# 用序號比對,之後 OminiBotHV 底盤板(可能也是 CP210x)插上也不會搶到這個名字。
+# 安裝:sudo cp udev/99-rplidar.rules /etc/udev/rules.d/ && sudo udevadm control --reload-rules && sudo udevadm trigger
+# 之後底盤板的規則另建一條(SYMLINK+="ominibot"),見 雙機RViz連線.md 待辦。
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", ATTRS{serial}=="c0ee3c73717fef119ce11c1cedd322a4", SYMLINK+="rplidar", MODE="0666"
