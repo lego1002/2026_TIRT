@@ -146,7 +146,7 @@ Visualization Manager:
           Value: true
         Value: false
       Enabled: true
-      Keep: 50
+      Keep: 1
       Name: Odometry
       Position Tolerance: 0.1
       Shape:
@@ -154,10 +154,10 @@ Visualization Manager:
         Axes Length: 0.3
         Axes Radius: 0.02
         Color: 255; 25; 0
-        Head Length: 0.1
-        Head Radius: 0.06
-        Shaft Length: 0.3
-        Shaft Radius: 0.03
+        Head Length: 0.03
+        Head Radius: 0.02
+        Shaft Length: 0.08
+        Shaft Radius: 0.01
         Value: Arrow
       Topic:
         Depth: 5

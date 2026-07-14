@@ -54,6 +54,14 @@ class OminiBotDriver(Node):
         self.declare_parameter('linear_x_sign', 1.0)
         self.declare_parameter('linear_y_sign', -1.0)  # board strafes opposite REP-103; verified on hardware
         self.declare_parameter('angular_z_sign', -1.0)  # board spins opposite REP-103; verified on hardware
+        # Robot geometry (mm) sent to the board so its wheel-rev<->body-velocity
+        # conversion matches the real hardware. A wrong wheel_diameter scales the
+        # reported velocity (hence odom distance) by real/assumed, which slam_toolbox
+        # then has to fight -- the #1 cause of map drift. wheel/axle spacing scale
+        # the yaw term for the mecanum mixer.
+        self.declare_parameter('wheel_diameter_mm', 48)   # actual wheel is 48mm
+        self.declare_parameter('wheel_space_mm', 110)     # left-right wheel spacing
+        self.declare_parameter('axle_space_mm', 110)      # front-back axle spacing
 
         port = self.get_parameter('port').value
         baud = self.get_parameter('baud').value
@@ -68,9 +76,19 @@ class OminiBotDriver(Node):
         self.sy = self.get_parameter('linear_y_sign').value
         self.sz = self.get_parameter('angular_z_sign').value
 
+        wheel_diameter = self.get_parameter('wheel_diameter_mm').value
+        wheel_space = self.get_parameter('wheel_space_mm').value
+        axle_space = self.get_parameter('axle_space_mm').value
+
         # --- serial board -----------------------------------------------------
-        self.get_logger().info(f'Opening OminiBotHV on {port} @ {baud}')
-        self.bot = OminiBotHV(port=port, baud=baud)
+        self.get_logger().info(
+            f'Opening OminiBotHV on {port} @ {baud} '
+            f'(wheel_diameter={wheel_diameter}mm, wheel_space={wheel_space}mm, '
+            f'axle_space={axle_space}mm)')
+        self.bot = OminiBotHV(port=port, baud=baud,
+                              wheel_diameter=wheel_diameter,
+                              wheel_space=wheel_space,
+                              axle_space=axle_space)
 
         # --- state ------------------------------------------------------------
         self._cmd_lock = threading.Lock()
