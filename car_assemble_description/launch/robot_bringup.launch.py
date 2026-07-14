@@ -4,18 +4,19 @@
   1. robot_state_publisher —— 用真正的 URDF 發布車體/輪子/lidar_link 的 TF 與 /robot_description
   2. joint_state_publisher —— headless(非 GUI)版,把四顆 continuous 輪子 joint 補 0,讓輪子 TF 存在
   3. sllidar_node + base_link->laser_frame 靜態 TF —— 沿用 my_robot_lidar/lidar_start.launch.py
-  4. 底盤:use_fake_odom=true → 發假的 odom->base_link 靜態 TF;
-        use_fake_odom=false → 改跑 ominibot_driver(收 /cmd_vel、發 /odom + 真 odom->base_link TF)
+  4. 底盤(預設 use_fake_odom=false):跑 ominibot_driver(收 /cmd_vel、發 /odom + 真 odom->base_link TF);
+        use_fake_odom=true → 改發假的 odom->base_link 靜態 TF(無硬體純看模型時用)
   5. slam_toolbox(async)—— 沿用 my_robot_lidar 的 mapper 參數
 
 RViz 一律不在這裡開;請在另一台 Ubuntu PC 上用相同 ROS_DOMAIN_ID 連過來看
-(見 car_assemble_description/rviz/view_robot.rviz 與 repo 內的雙機連線說明)。
+(Pi 端一鍵用 repo 根目錄的 run_robot.sh;PC 端一鍵用 run_rviz.sh。
+ 見 car_assemble_description/rviz/view_robot.rviz 與 repo 內的雙機連線說明)。
 
 用法:
-  ros2 launch car_assemble_description robot_bringup.launch.py
-  ros2 launch car_assemble_description robot_bringup.launch.py use_slam:=false      # 只出光達+模型,不建圖
-  ros2 launch car_assemble_description robot_bringup.launch.py use_fake_odom:=false # 接上真正底盤(跑 ominibot_driver)
-  ros2 launch car_assemble_description robot_bringup.launch.py use_fake_odom:=false ominibot_port:=/dev/ttyUSB1  # udev 還沒裝時
+  ros2 launch car_assemble_description robot_bringup.launch.py                       # 預設:真底盤+光達+SLAM
+  ros2 launch car_assemble_description robot_bringup.launch.py use_slam:=false       # 只出光達+模型,不建圖
+  ros2 launch car_assemble_description robot_bringup.launch.py use_fake_odom:=true   # 沒接底盤,只看模型/光達
+  ros2 launch car_assemble_description robot_bringup.launch.py ominibot_port:=/dev/ttyUSB1  # udev 還沒裝時
 """
 import os
 
@@ -49,16 +50,17 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('use_slam', default_value='true',
                               description='是否啟動 slam_toolbox 建圖'),
-        DeclareLaunchArgument('use_fake_odom', default_value='true',
-                              description='true=發假 odom 靜態 TF;false=改跑 ominibot_driver 真底盤'),
+        DeclareLaunchArgument('use_fake_odom', default_value='false',
+                              description='false=跑真底盤 ominibot_driver(預設,一鍵開底盤);true=只發假 odom 靜態 TF(無硬體純看模型時用)'),
         DeclareLaunchArgument('ominibot_port', default_value='/dev/ominibot',
                               description='OminiBotHV 底盤板序列埠(udev 未裝時可設 /dev/ttyUSB1)'),
+        # 這三個預設值已對齊 driver_node.py 硬體實測後的正負號;若之後方向再有變,兩邊要一起改。
         DeclareLaunchArgument('vx_sign', default_value='1.0',
                               description='前後反了就設 -1.0(x 前進為正)'),
-        DeclareLaunchArgument('vy_sign', default_value='1.0',
-                              description='左右平移反了就設 -1.0(y 左移為正)'),
-        DeclareLaunchArgument('wz_sign', default_value='1.0',
-                              description='旋轉方向反了就設 -1.0(z 逆時針為正)'),
+        DeclareLaunchArgument('vy_sign', default_value='-1.0',
+                              description='左右平移(實測底盤與 REP-103 相反 → 預設 -1.0)'),
+        DeclareLaunchArgument('wz_sign', default_value='-1.0',
+                              description='旋轉方向(實測底盤與 REP-103 相反 → 預設 -1.0)'),
 
         # 1. 車體模型 TF + /robot_description(PC 端 RViz 的 RobotModel 會訂閱這個 topic)
         Node(

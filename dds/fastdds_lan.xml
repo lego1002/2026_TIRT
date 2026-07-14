@@ -7,12 +7,13 @@
   topic」),但 /robot_description、/tf、/map 這類大樣本一旦被對方走 tailscale(MTU 1280)
   傳,就會分片掉包 → RViz 收不到 TF → 整個畫面空白。把 DDS 綁死在 LAN 就解決。
 
-  用法(已寫進 ~/.bashrc):
-    export FASTRTPS_DEFAULT_PROFILES_FILE=/home/lego/2026_TIRT/dds/fastdds_lan.xml
+  這是「範本」:<address> 是佔位符 @LAN_IP@,不要直接指向本檔(Fast DDS 會解析失敗)。
+  改用同目錄的 setup_dds.sh 自動偵測本機當下 LAN IP、渲染成可用的 profile 並匯出環境變數:
 
-  注意:<address> 是這台的 LAN IP。wlan0 是 DHCP,IP 若變動要改這裡,
-  建議在路由器上幫 Pi 綁 DHCP 固定 IP(reservation)一勞永逸。
-  PC 端要複製這個檔並把 address 改成「PC 自己的 LAN IP」。
+    source /home/lego/2026_TIRT/dds/setup_dds.sh   # 每台機器、每次換場地都 source 一次
+
+  這樣換場地不用手改 IP;兩台機器共用這支腳本(自動排除 tailscale0 選 LAN 介面)。
+  介面偵測不對時可覆寫:  DDS_IFACE=eth0 source .../setup_dds.sh
 -->
 <dds xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
     <profiles>
@@ -21,7 +22,7 @@
                 <transport_id>lan_transport</transport_id>
                 <type>UDPv4</type>
                 <interfaceWhiteList>
-                    <address>172.20.10.10</address>
+                    <address>@LAN_IP@</address>
                     <address>127.0.0.1</address>
                 </interfaceWhiteList>
             </transport_descriptor>

@@ -39,8 +39,10 @@ sudo apt-get install -y ros-humble-slam-toolbox ros-humble-joint-state-publisher
 source /opt/ros/humble/setup.bash
 export ROS_DOMAIN_ID=69      # 隨便挑 0~101,但兩台必須相同
 export ROS_LOCALHOST_ONLY=0  # 一定要 0,才能跨機器通訊
-# 只走 LAN、排除 tailscale/其他介面(見下方「多介面」說明);PC 端指向 PC 自己那份 xml
-export FASTRTPS_DEFAULT_PROFILES_FILE=/home/lego/2026_TIRT/dds/fastdds_lan.xml
+# 只走 LAN、排除 tailscale/其他介面(見下方「多介面」說明)。
+# 這行會自動偵測本機當下 LAN IP 並設好 FASTRTPS_DEFAULT_PROFILES_FILE,換場地免手改;
+# 兩台共用同一支腳本(各自偵測自己的 IP)。介面猜錯時:DDS_IFACE=eth0 source .../setup_dds.sh
+source /home/lego/2026_TIRT/dds/setup_dds.sh
 ```
 
 Pi 端還要多 source 工作區:
@@ -60,9 +62,12 @@ Pi 同時有 `wlan0`(192.168.50.x)和 `tailscale0`(100.x)兩個介面。預設 F
 - `ros2 topic list` 這種小 discovery 封包兩條路都通 → **看得到 topic**;
 - 但 `/robot_description`、`/tf`、`/map` 這類**大樣本**一旦被對方走 tailscale(MTU 只有 1280)傳,就分片掉包 → **RViz 收得到訂閱卻沒資料 → 整個畫面空白**。
 
-修法:用 `dds/fastdds_lan.xml`(`interfaceWhiteList` 只留 LAN IP + 127.0.0.1)把 DDS 綁死在 LAN,
-再用 `FASTRTPS_DEFAULT_PROFILES_FILE` 指過去(上面已加)。**兩台都要做**,PC 那份的 `<address>`
-改成 PC 自己的 LAN IP。wlan0 是 DHCP,IP 會變 → 建議在路由器幫兩台綁 DHCP 固定 IP。
+修法:把 DDS 的 `interfaceWhiteList` 綁死在 LAN IP + 127.0.0.1。`dds/fastdds_lan.xml` 現在是**範本**
+(`<address>` 是佔位符 `@LAN_IP@`,別直接指它,會解析失敗)—— 改 `source dds/setup_dds.sh`,它會偵測
+本機當下 LAN IP、渲染成 `$XDG_RUNTIME_DIR/fastdds_active.xml` 並匯出 `FASTRTPS_DEFAULT_PROFILES_FILE`。
+**兩台都要 source**(各自偵測自己的 IP);Fast DDS 2.6 的白名單只吃 IP 不吃介面名,所以才需要這支腳本
+自動代入。換場地 / wlan0 換 IP 只要重開 terminal 或重新 `source` 即可,不必手改 xml,也不必綁固定 IP。
+前提仍是**兩台要在同一區網**(各自 `hostname -I` 前三段相同)。
 
 ---
 

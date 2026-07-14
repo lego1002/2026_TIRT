@@ -52,8 +52,8 @@ class OminiBotDriver(Node):
         # they stay consistent. Set to -1.0 to flip an axis (e.g. "forward is
         # backward" -> linear_x_sign:=-1.0).
         self.declare_parameter('linear_x_sign', 1.0)
-        self.declare_parameter('linear_y_sign', 1.0)
-        self.declare_parameter('angular_z_sign', 1.0)
+        self.declare_parameter('linear_y_sign', -1.0)  # board strafes opposite REP-103; verified on hardware
+        self.declare_parameter('angular_z_sign', -1.0)  # board spins opposite REP-103; verified on hardware
 
         port = self.get_parameter('port').value
         baud = self.get_parameter('baud').value

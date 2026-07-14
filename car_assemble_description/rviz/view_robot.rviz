@@ -128,6 +128,45 @@ Visualization Manager:
         Value: /map_updates
       Use Timestamp: false
       Value: true
+    - Angle Tolerance: 0.1
+      Class: rviz_default_plugins/Odometry
+      Covariance:
+        Orientation:
+          Alpha: 0.5
+          Color: 255; 255; 127
+          Color Style: Unique
+          Frame: Local
+          Offset: 1
+          Scale: 1
+          Value: true
+        Position:
+          Alpha: 0.3
+          Color: 204; 51; 204
+          Scale: 1
+          Value: true
+        Value: false
+      Enabled: true
+      Keep: 50
+      Name: Odometry
+      Position Tolerance: 0.1
+      Shape:
+        Alpha: 1
+        Axes Length: 0.3
+        Axes Radius: 0.02
+        Color: 255; 25; 0
+        Head Length: 0.1
+        Head Radius: 0.06
+        Shaft Length: 0.3
+        Shaft Radius: 0.03
+        Value: Arrow
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /odom
+      Value: true
     - Class: rviz_default_plugins/TF
       Enabled: true
       Frame Timeout: 15

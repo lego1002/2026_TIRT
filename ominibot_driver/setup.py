@@ -25,6 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             'ominibot_driver_node = ominibot_driver.driver_node:main',
+            'mecanum_teleop = ominibot_driver.teleop_node:main',
         ],
     },
 )

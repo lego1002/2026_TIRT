@@ -45,8 +45,11 @@ human-editable text.
   - `launch/robot_bringup.launch.py` — the **real** on-robot entry point (headless, GUI-free), meant to run on
     the Raspberry Pi. It brings up `robot_state_publisher` + a non-GUI `joint_state_publisher` (zeros the four
     wheel joints so their TFs exist) + the RPLidar driver + SLAM Toolbox (async), plus a temporary fake
-    `odom->base_link` static TF. Two launch args: `use_slam` (default true) and `use_fake_odom` (default true,
-    flip to false once a real chassis driver publishes `/odom`). It `IncludeLaunchDescription`s
+    `odom->base_link` static TF. Two launch args: `use_slam` (default true) and `use_fake_odom` (**default
+    false** as of 2026-07-14 — the real `ominibot_driver` now runs by default; set `use_fake_odom:=true` for
+    hardware-free model/lidar viewing). The `vx_sign`/`vy_sign`/`wz_sign` launch args default to the same
+    hardware-verified signs as `driver_node.py` (`1.0`/`-1.0`/`-1.0`) — keep the two in sync, since the launch
+    passes them explicitly and would otherwise override the node defaults. It `IncludeLaunchDescription`s
     `my_robot_lidar`'s `lidar_start.launch.py` and reads that package's `mapper_params_online_async.yaml` —
     so it depends on packages **outside this repo** (see "Runtime deployment" below).
   - `rviz/view_robot.rviz` — saved RViz2 config for the **PC-side viewer** in the two-machine setup (Fixed
@@ -70,8 +73,24 @@ human-editable text.
   `odom->base_link` TF from the board's body-velocity feedback, and publishes the IMU quaternion on `/imu`
   (accel/gyro layout unverified, so left out). Odom is integrated from velocity (not IMU heading) to keep the
   `odom` frame smooth for slam_toolbox. Default port is `/dev/ominibot` (see `udev/99-ominibot.rules`).
-- `dds/fastdds_lan.xml` — Fast DDS profile that whitelists only the LAN interface + localhost. Pointed to via
-  `FASTRTPS_DEFAULT_PROFILES_FILE`. Its `<address>` is per-machine (the local LAN IP) — edit it for each host.
+  `driver_node.py` also has `linear_x_sign`/`linear_y_sign`/`angular_z_sign` params to correct the board's
+  axis conventions relative to REP-103 (`linear_y_sign` defaults to `-1.0` — the board strafes opposite
+  REP-103, verified on hardware). Both `/cmd_vel` and `/odom` share these signs, so flip a sign here rather
+  than in the teleop node to keep command and odometry consistent.
+  - `ominibot_driver/teleop_node.py` (`mecanum_teleop` console script) — keyboard teleop purpose-built for a
+    holonomic base: the numeric-pad `u/i/o j/k/l m/,/.` keys are pure translation (including strafing, a
+    first-class motion instead of Shift-hidden like `teleop_twist_keyboard`), `a`/`d` are pure spin, `w`/`s`
+    scale speed, `k`/space stop. Pad and turn keys are mutually exclusive (pressing one zeroes the other
+    axis). It re-publishes the current `Twist` every loop (≥10 Hz) to keep the driver's `cmd_vel` watchdog
+    fed. Run with `ros2 run ominibot_driver mecanum_teleop`.
+- `dds/fastdds_lan.xml` — Fast DDS profile **template** that whitelists only the LAN interface + localhost
+  (Fast DDS 2.6 on Humble whitelists by IP, not interface name, so the LAN IP must be filled in). Its
+  `<address>` is the placeholder `@LAN_IP@` — do **not** point `FASTRTPS_DEFAULT_PROFILES_FILE` at this file
+  directly (it won't parse). Instead `source dds/setup_dds.sh`, which auto-detects the machine's current LAN
+  interface (excluding tailscale/loopback/virtual; override with `DDS_IFACE=`), renders the template to
+  `$XDG_RUNTIME_DIR/fastdds_active.xml`, and exports `FASTRTPS_DEFAULT_PROFILES_FILE`. This is what makes the
+  setup venue-portable: re-source (or open a new terminal) after switching networks instead of hand-editing
+  the IP. Both machines source the same script. It's wired into `~/.bashrc` on the Pi.
 - `udev/99-rplidar.rules` — udev rule binding the RPLidar C1 (CP2102N, VID 10c4 / PID ea60) to `/dev/rplidar`
   by USB serial, so a future chassis board on another CP210x adapter won't steal the port. Install per the
   header comment (`cp` to `/etc/udev/rules.d/`, reload, trigger).
@@ -117,10 +136,15 @@ figures, not left as a placeholder.
 The live robot runs **split across two machines** talking over ROS 2 DDS — `雙機RViz連線.md` is the full
 runbook; the essentials:
 
-- **Raspberry Pi = headless backend** (the robot). Runs `robot_bringup.launch.py` — model TF, lidar `/scan`,
-  SLAM `/map`, fake odom. It never opens a GUI.
-- **Ubuntu PC = viewer only.** Runs `rviz2 -d .../view_robot.rviz`. It must have `car_assemble_description`
+- **Raspberry Pi = headless backend** (the robot). One-click: `./run_robot.sh` (repo root) — sources ROS +
+  workspace + `dds/setup_dds.sh`, then runs `robot_bringup.launch.py` (real chassis + lidar `/scan` + SLAM
+  `/map` + model TF). It never opens a GUI. Pass-through args work, e.g. `./run_robot.sh use_fake_odom:=true`.
+- **Ubuntu PC = viewer only.** One-click: `./run_rviz.sh` — opens `rviz2` with `rviz/view_robot.rviz`
+  (Grid, RobotModel, LaserScan, Map, Odometry, TF preconfigured). It must have `car_assemble_description`
   built locally (so `package://` mesh paths resolve for RobotModel) but does **not** need lidar/SLAM packages.
+- The operator then opens two more terminals on the PC: `ros2 run ominibot_driver mecanum_teleop` to drive,
+  and the map-saver (e.g. `ros2 run nav2_map_server map_saver_cli -f <name>`, or slam_toolbox's serialize
+  service) to save the map.
 
 `car_assemble_description` is not self-contained at runtime: `robot_bringup.launch.py` depends on
 `my_robot_lidar`, `sllidar_ros2`, and `slam_toolbox`, which live in the ROS 2 workspace (`~/ros2_ws/src/`),
