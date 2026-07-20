@@ -38,7 +38,11 @@ class OminiBotDriver(Node):
         super().__init__('ominibot_driver')
 
         # --- parameters -------------------------------------------------------
-        self.declare_parameter('port', '/dev/ominibot')
+        # Board is wired to the Pi's GPIO UART (TX/RX on pins 8/10 -> ttyAMA0).
+        # /dev/serial0 is the Pi's stable alias for the primary GPIO UART; it
+        # replaced the old /dev/ominibot USB (FTDI) symlink after the board's
+        # USB terminal broke. Override with the `port` param if wired elsewhere.
+        self.declare_parameter('port', '/dev/serial0')
         self.declare_parameter('baud', 115200)
         self.declare_parameter('odom_frame', 'odom')
         self.declare_parameter('base_frame', 'base_link')
@@ -60,8 +64,44 @@ class OminiBotDriver(Node):
         # then has to fight -- the #1 cause of map drift. wheel/axle spacing scale
         # the yaw term for the mecanum mixer.
         self.declare_parameter('wheel_diameter_mm', 48)   # actual wheel is 48mm
-        self.declare_parameter('wheel_space_mm', 110)     # left-right wheel spacing
-        self.declare_parameter('axle_space_mm', 110)      # front-back axle spacing
+        self.declare_parameter('wheel_space_mm', 115)     # left-right wheel spacing (measured on real robot)
+        self.declare_parameter('axle_space_mm', 96)       # front-back axle spacing (measured on real robot)
+        # Motor/encoder scale sent to the board. encoder_ppr (pulses per motor
+        # rev) and gear_ratio multiply with wheel_diameter into a single scale on
+        # reported velocity/odom distance. The CircusPi factory defaults (165/55)
+        # are for a *different* motor and grossly over-report odom, so these MUST
+        # be matched to the real N20 motor. See SLAM_learning_note.md §7.
+        self.declare_parameter('encoder_ppr', 165)
+        self.declare_parameter('gear_ratio', 55)
+        # Closed-loop PID gains written to the board. Factory-tuned for the
+        # CircusPi 1:55 chassis; on a mismatched (lighter) motor these can
+        # overshoot/oscillate -- a likely cause of chassis vibration. Exposed so
+        # they can be lowered from the command line without a rebuild.
+        self.declare_parameter('pos_kp', 3000)
+        self.declare_parameter('pos_ki', 1050)
+        self.declare_parameter('pos_kd', 0)
+        self.declare_parameter('vel_kp', 3000)
+        self.declare_parameter('vel_ki', 1050)
+        # Feedback-velocity correction. The board reports body velocity using a
+        # FIXED internal calibration for the CircusPi reference robot and ignores
+        # the 0x24/0x23 geometry config on the feedback path (verified on
+        # hardware: a config readback confirms gear_ratio etc. are stored, yet
+        # changing them does not move odom at all). Result: odom over-reports
+        # ~5x. These scales multiply the reported velocity back to real SI units
+        # before integration -- this is the ONLY working odom calibration lever.
+        # odom_linear_scale from the 1 m straight test (SLAM_learning_note.md
+        # §7.1); odom_angular_scale from the 720 deg spin test (§7.2). Set both
+        # to 1.0 to see the board's raw (uncorrected) output.
+        self.declare_parameter('odom_linear_scale', 0.16)    # measured: raw over-reports ~6.25x (5.0-6.55 across runs)
+        self.declare_parameter('odom_angular_scale', 0.195)  # wheel-az fallback scale (only if use_gyro_heading=False)
+        # Heading source. The wheel-derived az is destroyed by mecanum roller
+        # slip -- a real 360 deg spin over-reports as ~2270 deg of wheel az. The
+        # board's raw gyro-Z is a direct yaw-rate measurement, accurate to ~3%
+        # on the same spin and immune to slip, so integrate IT for heading. (The
+        # IMU quaternion is useless: 6-axis, no magnetometer -> yaw is frozen.)
+        self.declare_parameter('use_gyro_heading', True)
+        self.declare_parameter('gyro_z_sign', 1.0)   # flip to -1.0 if odom yaw turns the wrong way
+        self.declare_parameter('gyro_scale', 1.0)     # 360 deg spin read ~350 deg; ~1.0, refine if needed
 
         port = self.get_parameter('port').value
         baud = self.get_parameter('baud').value
@@ -75,20 +115,38 @@ class OminiBotDriver(Node):
         self.sx = self.get_parameter('linear_x_sign').value
         self.sy = self.get_parameter('linear_y_sign').value
         self.sz = self.get_parameter('angular_z_sign').value
+        self.odom_lin_scale = self.get_parameter('odom_linear_scale').value
+        self.odom_ang_scale = self.get_parameter('odom_angular_scale').value
+        self.use_gyro_heading = self.get_parameter('use_gyro_heading').value
+        self.gyro_sign = self.get_parameter('gyro_z_sign').value
+        self.gyro_scale = self.get_parameter('gyro_scale').value
 
         wheel_diameter = self.get_parameter('wheel_diameter_mm').value
         wheel_space = self.get_parameter('wheel_space_mm').value
         axle_space = self.get_parameter('axle_space_mm').value
+        encoder_ppr = self.get_parameter('encoder_ppr').value
+        gear_ratio = self.get_parameter('gear_ratio').value
+        pos_kp = self.get_parameter('pos_kp').value
+        pos_ki = self.get_parameter('pos_ki').value
+        pos_kd = self.get_parameter('pos_kd').value
+        vel_kp = self.get_parameter('vel_kp').value
+        vel_ki = self.get_parameter('vel_ki').value
 
         # --- serial board -----------------------------------------------------
         self.get_logger().info(
             f'Opening OminiBotHV on {port} @ {baud} '
             f'(wheel_diameter={wheel_diameter}mm, wheel_space={wheel_space}mm, '
-            f'axle_space={axle_space}mm)')
+            f'axle_space={axle_space}mm, encoder_ppr={encoder_ppr}, '
+            f'gear_ratio={gear_ratio}, pos_pid=({pos_kp},{pos_ki},{pos_kd}), '
+            f'vel_pid=({vel_kp},{vel_ki}))')
         self.bot = OminiBotHV(port=port, baud=baud,
                               wheel_diameter=wheel_diameter,
                               wheel_space=wheel_space,
-                              axle_space=axle_space)
+                              axle_space=axle_space,
+                              encoder_ppr=encoder_ppr,
+                              gear_ratio=gear_ratio,
+                              pos_kp=pos_kp, pos_ki=pos_ki, pos_kd=pos_kd,
+                              vel_kp=vel_kp, vel_ki=vel_ki)
 
         # --- state ------------------------------------------------------------
         self._cmd_lock = threading.Lock()
@@ -151,10 +209,16 @@ class OminiBotDriver(Node):
         now = self.get_clock().now()
         stamp = now.to_msg()
 
-        # Board feedback -> REP-103 body velocities (same axis signs as the command).
-        lx = self.sx * data['lx']
-        ly = self.sy * data['ly']
-        az = self.sz * data['az']
+        # Board feedback -> REP-103 body velocities. Linear x/y from the wheels
+        # (sign + measured scale, since the raw feedback over-reports ~6x). Yaw
+        # rate from the raw gyro (immune to mecanum slip); fall back to the
+        # scaled wheel az only if gyro heading is disabled.
+        lx = self.sx * data['lx'] * self.odom_lin_scale
+        ly = self.sy * data['ly'] * self.odom_lin_scale
+        if self.use_gyro_heading:
+            az = self.gyro_sign * data['gyro_z'] * self.gyro_scale
+        else:
+            az = self.sz * data['az'] * self.odom_ang_scale
 
         # Dead-reckon odom from body velocities.
         if self._last_odom_time is not None:

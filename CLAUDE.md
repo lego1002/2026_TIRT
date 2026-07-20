@@ -45,17 +45,20 @@ human-editable text.
   - `launch/robot_bringup.launch.py` — the **real** on-robot entry point (headless, GUI-free), meant to run on
     the Raspberry Pi. It brings up `robot_state_publisher` + a non-GUI `joint_state_publisher` (zeros the four
     wheel joints so their TFs exist) + the RPLidar driver + SLAM Toolbox (async), plus a temporary fake
-    `odom->base_link` static TF. Two launch args: `use_slam` (default true) and `use_fake_odom` (**default
+    `odom->base_link` static TF. Launch args: `use_slam` (default true), `use_fake_odom` (**default
     false** as of 2026-07-14 — the real `ominibot_driver` now runs by default; set `use_fake_odom:=true` for
-    hardware-free model/lidar viewing). The `vx_sign`/`vy_sign`/`wz_sign` launch args default to the same
+    hardware-free model/lidar viewing), and `ominibot_port` (default `/dev/serial0`, the Pi GPIO UART).
+    The `vx_sign`/`vy_sign`/`wz_sign` launch args default to the same
     hardware-verified signs as `driver_node.py` (`1.0`/`-1.0`/`-1.0`) — keep the two in sync, since the launch
     passes them explicitly and would otherwise override the node defaults. It `IncludeLaunchDescription`s
     `my_robot_lidar`'s `lidar_start.launch.py` and reads that package's `mapper_params_online_async.yaml` —
     so it depends on packages **outside this repo** (see "Runtime deployment" below).
   - `rviz/view_robot.rviz` — saved RViz2 config for the **PC-side viewer** in the two-machine setup (Fixed
     Frame `map`, RobotModel on `/robot_description`, LaserScan `/scan`, Map `/map` with Durability set to
-    **Transient Local** to receive the latched map, TF on). Note this is distinct from `display.launch.py`,
-    which still ships no saved config and needs its displays added by hand.
+    **Transient Local** to receive the latched map, Odometry with `Keep: 1` and small arrows — the previous
+    `Keep: 50` + 0.4 m arrows visually buried the 0.15 m robot; temporarily set `Keep` back up to visualize
+    odometry error as a breadcrumb trail when calibrating — and TF). Note this is distinct from
+    `display.launch.py`, which still ships no saved config and needs its displays added by hand.
 - `OminiBotHV-master/` — vendor (CircusPi) driver package for the OminiBotHV motor/IMU controller board.
   - `example/OminiBot_HV_Meca.py` — reference Python driver (`ominibothv` class) showing the serial protocol:
     frames are `\x7b <cmd> ... <bcc> \x7d` with a big-endian XOR checksum (`calculate_bcc`). Key methods:
@@ -72,15 +75,31 @@ human-editable text.
   base after `cmd_vel_timeout`), and a background read thread dead-reckons `/odom` + broadcasts
   `odom->base_link` TF from the board's body-velocity feedback, and publishes the IMU quaternion on `/imu`
   (accel/gyro layout unverified, so left out). Odom is integrated from velocity (not IMU heading) to keep the
-  `odom` frame smooth for slam_toolbox. Default port is `/dev/ominibot` (see `udev/99-ominibot.rules`).
+  `odom` frame smooth for slam_toolbox. Default port is `/dev/serial0` — the board's USB (FTDI)
+  terminal broke, so as of 2026-07-19 it is wired to the Pi's **GPIO UART** (TX/RX on GPIO14/15,
+  pins 8/10 → `ttyAMA0`, of which `/dev/serial0` is the stable alias). The serial *protocol* is
+  unchanged (raw UART is exactly what the FTDI used to bridge, same 115200 8N1); only the port
+  moved. `udev/99-ominibot.rules` is now a deprecated no-op — a GPIO UART is a built-in platform
+  device that USB enumeration can't steal, so no udev rule is needed. This requires `enable_uart=1`
+  + `dtoverlay=disable-bt` in `/boot/firmware/config.txt` and no serial console on `ttyAMA0` in
+  `cmdline.txt` (both already set on the Pi); the driver user must be in the `dialout` group.
   `driver_node.py` also has `linear_x_sign`/`linear_y_sign`/`angular_z_sign` params to correct the board's
-  axis conventions relative to REP-103 (`linear_y_sign` defaults to `-1.0` — the board strafes opposite
-  REP-103, verified on hardware). Both `/cmd_vel` and `/odom` share these signs, so flip a sign here rather
-  than in the teleop node to keep command and odometry consistent.
+  axis conventions relative to REP-103 (`linear_y_sign` and `angular_z_sign` default to `-1.0` — the board
+  strafes and spins opposite REP-103, verified on hardware). Both `/cmd_vel` and `/odom` share these signs, so
+  flip a sign here rather than in the teleop node to keep command and odometry consistent. It also has
+  `wheel_diameter_mm` (default 48 — the real wheel; the firmware's factory default of 60 over-reported
+  velocity by 1.25× and was the root cause of SLAM map drift), plus `wheel_space_mm`/`axle_space_mm`
+  (default 110/110 — factory values, **not yet measured on the real robot**; they scale the yaw term).
+  These are written into the board's firmware once at node startup (`\x7b\x24` config frame), so changing
+  them requires restarting the bringup. Calibration procedures (drive 1 m / spin 720° and compare `/odom`)
+  are in `SLAM_learning_note.md` §7. Note `ominibot_driver` is `ament_python`: unlike launch/config edits,
+  editing any `.py` requires `colcon build --packages-select ominibot_driver --symlink-install` before
+  `ros2 run`/`ros2 launch` pick it up.
   - `ominibot_driver/teleop_node.py` (`mecanum_teleop` console script) — keyboard teleop purpose-built for a
     holonomic base: the numeric-pad `u/i/o j/k/l m/,/.` keys are pure translation (including strafing, a
     first-class motion instead of Shift-hidden like `teleop_twist_keyboard`), `a`/`d` are pure spin, `w`/`s`
-    scale speed, `k`/space stop. Pad and turn keys are mutually exclusive (pressing one zeroes the other
+    scale linear speed, `q`/`e` scale turn speed (split into two key pairs on 2026-07-14 — they were coupled
+    and turn speed "couldn't change"), `k`/space stop. Pad and turn keys are mutually exclusive (pressing one zeroes the other
     axis). It re-publishes the current `Twist` every loop (≥10 Hz) to keep the driver's `cmd_vel` watchdog
     fed. Run with `ros2 run ominibot_driver mecanum_teleop`.
 - `dds/fastdds_lan.xml` — Fast DDS profile **template** that whitelists only the LAN interface + localhost
@@ -94,8 +113,20 @@ human-editable text.
 - `udev/99-rplidar.rules` — udev rule binding the RPLidar C1 (CP2102N, VID 10c4 / PID ea60) to `/dev/rplidar`
   by USB serial, so a future chassis board on another CP210x adapter won't steal the port. Install per the
   header comment (`cp` to `/etc/udev/rules.d/`, reload, trigger).
+- `run_robot.sh` / `run_rviz.sh` / `save_map.sh` — one-click entry points (see "Runtime deployment" below).
+- `maps/` — saved SLAM maps (`.pgm` + `.yaml` pairs) produced by `save_map.sh`.
 - `雙機RViz連線.md` — the definitive runbook (Chinese) for the two-machine visualization workflow; read it
-  before touching bringup, DDS, or RViz-connectivity issues.
+  before touching bringup, DDS, or RViz-connectivity issues. Caveat: its 待辦 section's three 2026-07-14
+  items (reversed turn, custom teleop, map drift) have all since been fixed in code — trust the code and
+  `SLAM_learning_note.md` over that list.
+- `SLAM_learning_note.md` — SLAM primer + this project's field-test debrief (Chinese): the
+  `map->odom->base_link` TF split, symptom→cause table (map drift, model jump-back on stop, broken maps),
+  odometry calibration procedures (§7: drive 1 m to verify `wheel_diameter_mm`, spin 720° to verify
+  `wheel_space_mm`/`axle_space_mm`), and a quick-reference table of driver + slam_toolbox parameters. Read it
+  before touching odometry, driver geometry params, or slam_toolbox config. Note the slam_toolbox config
+  (`mapper_params_online_async.yaml`) lives in `my_robot_lidar` **outside this repo**.
+- `command_note.md` — quick crib sheet (Chinese) of the start-to-finish SLAM session commands; overlaps the
+  runbook, kept as the operator's cheat sheet.
 - `urdf閱讀方法.md` — running notes (in Chinese) on how to validate/view the URDF and known open issues; check
   this file for the current TODO list before doing further URDF work (e.g. missing wheel `<limit>` tags, and
   a `rear_left_wheel_joint` origin RPY that differs from the other three wheels — harmless mathematically
@@ -143,8 +174,8 @@ runbook; the essentials:
   (Grid, RobotModel, LaserScan, Map, Odometry, TF preconfigured). It must have `car_assemble_description`
   built locally (so `package://` mesh paths resolve for RobotModel) but does **not** need lidar/SLAM packages.
 - The operator then opens two more terminals on the PC: `ros2 run ominibot_driver mecanum_teleop` to drive,
-  and the map-saver (e.g. `ros2 run nav2_map_server map_saver_cli -f <name>`, or slam_toolbox's serialize
-  service) to save the map.
+  and `./save_map.sh <name>` to save the map (wraps `map_saver_cli` with `save_map_timeout:=10.0` — the
+  default ~2 s timeout often misses the latched `/map` and errors out; bare names land in `maps/`).
 
 `car_assemble_description` is not self-contained at runtime: `robot_bringup.launch.py` depends on
 `my_robot_lidar`, `sllidar_ros2`, and `slam_toolbox`, which live in the ROS 2 workspace (`~/ros2_ws/src/`),

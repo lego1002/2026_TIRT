@@ -1,4 +1,19 @@
-# OminiBotHV 底盤板 (FTDI FT230X USB-UART) 固定綁定成 /dev/ominibot
-# 用序號比對,和光達的 /dev/rplidar (CP210x) 分屬不同晶片,插拔誰先誰後都不會搶埠。
-# 安裝:sudo cp udev/99-ominibot.rules /etc/udev/rules.d/ && sudo udevadm control --reload-rules && sudo udevadm trigger
-SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6015", ATTRS{serial}=="DN01FHGS", SYMLINK+="ominibot", MODE="0666"
+# OminiBotHV 底盤板 —— 已不再走 USB,這條 udev 規則已作廢(保留檔案僅供備查)。
+#
+# 舊做法:板上的 FTDI FT230X USB-UART 橋接器插到 Pi,靠序號綁成 /dev/ominibot。
+# 現況(2026-07-19):該 USB 埠實體損壞,改用板子的 TX/RX 直接接到樹莓派 GPIO UART
+#   (GPIO14=TXD / GPIO15=RXD,實體 pin 8/10)。GPIO UART 是內建平台裝置,不會被
+#   USB 列舉搶埠,所以本來 udev 綁定要解決的「搶埠」問題已由硬體解決,不需要這條規則。
+#
+# 新的固定序列埠是 /dev/serial0(-> ttyAMA0,PL011),已是 driver_node.py /
+# robot_bringup.launch.py 的預設值,不用再裝任何 udev 規則。
+#
+# 需要 GPIO UART 能用的開機設定(本機 /boot/firmware/config.txt 已設好):
+#   enable_uart=1
+#   dtoverlay=disable-bt        # 把穩定的 PL011(ttyAMA0)接到 GPIO14/15
+#   且 cmdline.txt 不要有 console=serial0/ttyAMA0(否則序列主控台會搶走這個埠)
+# 使用者需在 dialout 群組(本機 lego 已在)才能開 /dev/serial0。
+#
+# 若哪天換一顆有 USB 的新底盤板,再參考 git 歷史把下面這行(換成新板的 idVendor/
+# idProduct/serial)復活即可:
+# SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6015", ATTRS{serial}=="DN01FHGS", SYMLINK+="ominibot", MODE="0666"

@@ -176,17 +176,18 @@ ROS 2 預設用 multicast 自動探索,大多數家用路由器 OK;若 `ros2 nod
 **Pi 端**改用真底盤啟動(關掉假里程計):
 
 ```bash
-# udev 規則裝好後(/dev/ominibot 存在):
+# 底盤板走 GPIO UART,預設埠 /dev/serial0,不用裝 udev:
 ros2 launch car_assemble_description robot_bringup.launch.py use_fake_odom:=false
-# udev 還沒裝、想先用 /dev/ttyUSB1:
-ros2 launch car_assemble_description robot_bringup.launch.py use_fake_odom:=false ominibot_port:=/dev/ttyUSB1
+# 若接到別的 UART(例如 mini-UART):
+ros2 launch car_assemble_description robot_bringup.launch.py use_fake_odom:=false ominibot_port:=/dev/ttyS0
 ```
 
-先裝底盤 udev 規則(和光達那條一樣做法):
-
-```bash
-sudo cp udev/99-ominibot.rules /etc/udev/rules.d/ && sudo udevadm control --reload-rules && sudo udevadm trigger
-```
+> **2026-07-19 接線改動**:底盤板的 USB 埠(FTDI)壞了,改用板子的 TX/RX 直接接樹莓派
+> GPIO UART(GPIO14=TXD / GPIO15=RXD,實體 pin 8/10)。序列協定完全沒變(原本 FTDI 也只是
+> USB↔UART 橋接,一樣 115200 8N1),只是埠從 `/dev/ominibot` 換成 `/dev/serial0`(→ ttyAMA0)。
+> GPIO UART 是內建裝置,USB 列舉搶不走,所以**不再需要 udev 規則**(`99-ominibot.rules` 已作廢)。
+> 前提(Pi 已設好):`/boot/firmware/config.txt` 有 `enable_uart=1` + `dtoverlay=disable-bt`、
+> `cmdline.txt` 沒有把序列主控台掛在 ttyAMA0、使用者在 `dialout` 群組。
 
 **PC 端**開 RViz(同前),再開一個終端機用鍵盤遙控發 `/cmd_vel`:
 

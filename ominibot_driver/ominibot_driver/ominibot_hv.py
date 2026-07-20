@@ -18,7 +18,7 @@ import serial
 
 class OminiBotHV:
     def __init__(self,
-                 port='/dev/ominibot',
+                 port='/dev/serial0',
                  baud=115200,
                  divisor_mode=4,
                  motor_direct=0,
@@ -35,7 +35,10 @@ class OminiBotHV:
                  pos_kd=0,
                  vel_kp=3000,
                  vel_ki=1050):
-        self.ser = serial.Serial(port, baud, timeout=1)
+        # exclusive=True (POSIX) so a second instance fails loudly with "port
+        # busy" instead of silently sharing the port and corrupting each other's
+        # reads -- that contention was killing odom and breaking the SLAM map.
+        self.ser = serial.Serial(port, baud, timeout=1, exclusive=True)
         self.robot_mode = divisor_mode
         self._write_lock = threading.Lock()
 
@@ -149,6 +152,10 @@ class OminiBotHV:
             'lx': s16(robot_vel[0:2]),
             'ly': s16(robot_vel[2:4]),
             'az': s16(robot_vel[4:6]),
+            # Raw MEMS gyro yaw rate (rad/s). imu_val layout: [0:6]=accel xyz,
+            # [6:12]=gyro xyz, [12:20]=quat wxyz. gyro Z ([10:12]) is a direct
+            # yaw-rate measurement -- immune to mecanum wheel slip, unlike az.
+            'gyro_z': s16(imu_val[10:12]),
             'qw': s16(imu_val[12:14]),
             'qx': s16(imu_val[14:16]),
             'qy': s16(imu_val[16:18]),

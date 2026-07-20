@@ -14,4 +14,13 @@ source /opt/ros/humble/setup.bash
 if [ -f "$HOME/ros2_ws/install/setup.bash" ]; then source "$HOME/ros2_ws/install/setup.bash"; fi
 source "$_here/dds/setup_dds.sh"
 
+# Guard: kill any stale bringup/driver from a previous run before launching.
+# Orphaned launch children survive Ctrl+C and keep holding the GPIO-UART serial
+# port; a second driver then fights over it ("multiple access on port"), reads
+# get corrupted, odom dies, and SLAM drops every scan -> broken map. Clearing
+# them here makes every start clean.
+pkill -f "robot_bringup.launch|ominibot_driver_node|sllidar_node|async_slam_toolbox_node" 2>/dev/null || true
+fuser -k /dev/ttyAMA0 2>/dev/null || true
+sleep 1
+
 exec ros2 launch car_assemble_description robot_bringup.launch.py "$@"
