@@ -15,8 +15,9 @@ slam_toolbox:
     map_update_interval: 2.0
     resolution: 0.05 # 地圖解析度 (5cm 一格)
     max_laser_range: 12.0 # C1 最遠可以到 12m (再遠通常不準)
+    min_laser_range: 0.15 # C1 最近 ~0.1m;設 0.15 濾掉太近的雜點(消除啟動時 0.0m 警告)
     minimum_time_interval: 0.1
-    transform_timeout: 0.5
+    transform_timeout: 1.0 # 0.5→1.0:雙機 WiFi 突發傳輸實測 /scan 停頓達 0.47s,拉大等 TF 的容忍時間,避免 queue full 丟 scan
     tf_buffer_duration: 30.
     stack_size_to_use: 40000000 # 記憶體設定
     enable_interactive_mode: true

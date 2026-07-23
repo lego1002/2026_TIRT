@@ -1,19 +1,31 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!--
-  Fast DDS 只走區網介面(wlan0 = 192.168.50.9)+ localhost,排除 tailscale0(100.x)。
+  兩件事一起做,缺一不可:
 
-  為什麼要這個:Pi 同時有 wlan0 與 tailscale0 兩個介面。預設 Fast DDS 會把兩個 IP
-  都當作 locator 公告出去,ros2 topic list 這種小 discovery 封包兩條路都通(所以「看得到
-  topic」),但 /robot_description、/tf、/map 這類大樣本一旦被對方走 tailscale(MTU 1280)
-  傳,就會分片掉包 → RViz 收不到 TF → 整個畫面空白。把 DDS 綁死在 LAN 就解決。
+  (1) 發現走 Fast DDS Discovery Server(純 unicast),不靠 multicast。
+      為什麼:實測這場地的 WiFi AP 不轉發 client 之間的 multicast(`ros2 multicast
+      send`/`receive` 對測收不到,但 ping 通)。而 DDS 預設的自動發現(SPDP)靠 multicast,
+      所以兩台永遠互相看不見 —— `ros2 topic list` 甚至連對方 topic 都沒有。改成 client 對
+      固定的 discovery server(@SERVER_IP@:@SERVER_PORT@)做 unicast 發現就繞開了。
+      server 由 Pi 端 dds/run_discovery_server.sh 啟動(run_robot.sh 會自動拉起)。
+      RemoteServer 的 prefix 44.53.00.5f... 是 `fastdds discovery -i 0`(server-id 0)的
+      固定 GUID prefix,不要改。
 
-  這是「範本」:<address> 是佔位符 @LAN_IP@,不要直接指向本檔(Fast DDS 會解析失敗)。
-  改用同目錄的 setup_dds.sh 自動偵測本機當下 LAN IP、渲染成可用的 profile 並匯出環境變數:
+  (2) 資料只走 LAN 介面(interfaceWhiteList = @LAN_IP@ + localhost),排除 tailscale0/docker。
+      為什麼:Pi/PC 都同時有 wlan0 + tailscale0(+ docker0)。就算發現接上了,若不綁介面,
+      /robot_description、/tf、/map 這類大樣本可能被走 tailscale(MTU 1280)傳 → 分片掉包 →
+      RViz 收不到 TF、畫面空白。綁死 LAN 就解決。
 
-    source /home/lego/2026_TIRT/dds/setup_dds.sh   # 每台機器、每次換場地都 source 一次
+  這是「範本」,含 @LAN_IP@ / @SERVER_IP@ / @SERVER_PORT@ 佔位符,不能直接指向本檔
+  (Fast DDS 會解析失敗)。改用同目錄的 setup_dds.sh 自動偵測本機 LAN IP、填入 server 位址、
+  渲染成可用 profile 並匯出 FASTRTPS_DEFAULT_PROFILES_FILE:
 
-  這樣換場地不用手改 IP;兩台機器共用這支腳本(自動排除 tailscale0 選 LAN 介面)。
-  介面偵測不對時可覆寫:  DDS_IFACE=eth0 source .../setup_dds.sh
+    # Pi(同時是 server 主機):server 預設 = 自己的 LAN IP,不用多設
+    source /home/lego/2026_TIRT/dds/setup_dds.sh
+    # PC:要指定 discovery server 在哪(= Pi 的 LAN IP)
+    DDS_SERVER=192.168.0.70 source /home/lego/2026_TIRT/dds/setup_dds.sh
+
+  換場地/換 IP 時兩台各自重 source 一次即可。介面偵測不對時:DDS_IFACE=eth0 ... source。
 -->
 <dds xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
     <profiles>
@@ -33,6 +45,23 @@
                     <transport_id>lan_transport</transport_id>
                 </userTransports>
                 <useBuiltinTransports>false</useBuiltinTransports>
+                <builtin>
+                    <discovery_config>
+                        <discoveryProtocol>CLIENT</discoveryProtocol>
+                        <discoveryServersList>
+                            <RemoteServer prefix="44.53.00.5f.45.50.52.4f.53.49.4d.41">
+                                <metatrafficUnicastLocatorList>
+                                    <locator>
+                                        <udpv4>
+                                            <address>@SERVER_IP@</address>
+                                            <port>@SERVER_PORT@</port>
+                                        </udpv4>
+                                    </locator>
+                                </metatrafficUnicastLocatorList>
+                            </RemoteServer>
+                        </discoveryServersList>
+                    </discovery_config>
+                </builtin>
             </rtps>
         </participant>
     </profiles>

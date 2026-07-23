@@ -23,4 +23,12 @@ pkill -f "robot_bringup.launch|ominibot_driver_node|sllidar_node|async_slam_tool
 fuser -k /dev/ttyAMA0 2>/dev/null || true
 sleep 1
 
+# Discovery server: the Pi hosts the unicast DDS rendezvous that both machines'
+# nodes connect to (this venue's WiFi blocks multicast, so default DDS discovery
+# can't link the two machines). Start it here in the background so a bare
+# ./run_robot.sh brings up everything the PC needs to find us. See
+# dds/run_discovery_server.sh and dds/fastdds_lan.xml for the full rationale.
+"$_here/dds/run_discovery_server.sh" >/tmp/dds_discovery_server.log 2>&1 &
+sleep 1
+
 exec ros2 launch car_assemble_description robot_bringup.launch.py "$@"
