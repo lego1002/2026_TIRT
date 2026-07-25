@@ -1,4 +1,0 @@
-[console_scripts]
-mecanum_teleop = ominibot_driver.teleop_node:main
-ominibot_driver_node = ominibot_driver.driver_node:main
-

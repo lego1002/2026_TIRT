@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this repo is
 
 Hardware design files and robot software for a maze-solving robot built for the 2026 TIRT competition
-(`2026TIRT-迷宮機器人挑戰賽.pdf`). This is primarily a CAD/URDF repository, not an application codebase —
+(`docs/2026TIRT-迷宮機器人挑戰賽.pdf`). This is primarily a CAD/URDF repository, not an application codebase —
 there is no build system, package manager, or test suite for most of the content. Treat SolidWorks/STEP/STL
 files as opaque binary artifacts; only the URDF, launch files, config, and the OminiBotHV Python driver are
 human-editable text.
@@ -40,7 +40,7 @@ human-editable text.
     conversion) once `ros2_control` is wired up.
   - `launch/display.launch.py` and `launch/gazebo.launch.py` — ROS 2 Python launch files (RViz2 preview with
     `joint_state_publisher_gui`, and Gazebo Classic spawn via `gazebo_ros`/`spawn_entity.py`). See
-    `urdf閱讀方法.md`'s "ROS 2 轉換" and "套件改名" sections for the full conversion/rename rationale and what
+    `notes/urdf閱讀方法.md`'s "ROS 2 轉換" and "套件改名" sections for the full conversion/rename rationale and what
     was dropped (the ROS 1 `/calibrated` rostopic-pub step has no ROS 2 equivalent and was removed).
   - `launch/robot_bringup.launch.py` — the **real** on-robot entry point (headless, GUI-free), meant to run on
     the Raspberry Pi. It brings up `robot_state_publisher` + a non-GUI `joint_state_publisher` (zeros the four
@@ -121,7 +121,7 @@ human-editable text.
   over-reports as ~2270° of wheel yaw, vs. ~350° from the gyro); the IMU quaternion itself can't substitute
   since it's 6-axis with no magnetometer, so yaw is frozen. `gyro_z_sign`/`gyro_scale` fine-tune that gyro
   integration. Calibration procedures for all of the above (drive 1 m / spin 720° and compare `/odom`) are in
-  `SLAM_learning_note.md` §7. Note `ominibot_driver` is `ament_python`: unlike launch/config edits, editing
+  `notes/SLAM_learning_note.md` §7. Note `ominibot_driver` is `ament_python`: unlike launch/config edits, editing
   any `.py` requires `colcon build --packages-select ominibot_driver --symlink-install` before `ros2
   run`/`ros2 launch` pick it up.
   - `ominibot_driver/teleop_node.py` (`mecanum_teleop` console script) — keyboard teleop purpose-built for a
@@ -166,11 +166,22 @@ human-editable text.
 - `run_robot.sh` / `run_slam.sh` / `run_rviz.sh` / `save_map.sh` — one-click entry points (see "Runtime
   deployment" below).
 - `maps/` — saved SLAM maps (`.pgm` + `.yaml` pairs) produced by `save_map.sh`.
-- `雙機RViz連線.md` — the definitive runbook (Chinese) for the two-machine visualization workflow; read it
+- `docs/` — reference documents: the competition rulebook PDF (`2026TIRT-迷宮機器人挑戰賽.pdf`), the OminiBotHV
+  serial-protocol/kinematics spec PDF (a copy of the one in `OminiBotHV-master/communication/`), and field-test
+  screenshots. As of the 2026-07-25 "reorganize the structure" commit, all the Chinese design/field-test notes
+  moved from the repo root into `notes/` (`SLAM_learning_note.md`, `command_note.md`, `urdf閱讀方法.md`,
+  `雙機RViz連線.md`); `networkplan.md` and `0721_net_issue_plan.md` stayed at the root.
+- `build/`, `install/`, `log/` — colcon output that the same 2026-07-25 commit **accidentally committed** into
+  git even though these are the workspace's throwaway artifacts. `.gitignore` was updated (uncommitted at the
+  time of writing) to add `/build`, `/install`, `/log`, but they're already tracked, so `.gitignore` alone
+  won't untrack them — a `git rm -r --cached build install log` is still needed. Ignore their contents; the
+  editable sources live in `car_assemble_description/` and `ominibot_driver/`, and both packages are symlinked
+  into `~/ros2_ws/src/` (the real build workspace) rather than built in-tree here.
+- `notes/雙機RViz連線.md` — the definitive runbook (Chinese) for the two-machine visualization workflow; read it
   before touching bringup, DDS, or RViz-connectivity issues. Caveat: its 待辦 section's three 2026-07-14
   items (reversed turn, custom teleop, map drift) have all since been fixed in code — trust the code and
-  `SLAM_learning_note.md` over that list.
-- `SLAM_learning_note.md` — SLAM primer + this project's field-test debrief (Chinese): the
+  `notes/SLAM_learning_note.md` over that list.
+- `notes/SLAM_learning_note.md` — SLAM primer + this project's field-test debrief (Chinese): the
   `map->odom->base_link` TF split, symptom→cause table (map drift, model jump-back on stop, broken maps),
   odometry calibration procedures (§7: drive 1 m to verify `odom_linear_scale`, spin 720° to verify
   `use_gyro_heading`/`gyro_scale`), and a quick-reference table of driver + slam_toolbox parameters. Read it
@@ -178,7 +189,7 @@ human-editable text.
   config (`mapper_params_online_async.yaml`) has been copied **into this repo**
   (`car_assemble_description/config/`) so the PC can run SLAM without installing `my_robot_lidar`; see
   `launch/slam_pc.launch.py` above.
-- `command_note.md` — quick crib sheet (Chinese) of the start-to-finish SLAM session commands; overlaps the
+- `notes/command_note.md` — quick crib sheet (Chinese) of the start-to-finish SLAM session commands; overlaps the
   runbook, kept as the operator's cheat sheet.
 - `networkplan.md` — in-progress notes (Chinese) on bringing self-hosted Wi-Fi (phone or laptop hotspot) to
   the competition venue instead of relying on venue Wi-Fi, so the Pi/PC DDS link stays on a network the team
@@ -193,7 +204,7 @@ human-editable text.
   from `networkplan.md` must be written as multiple `access-points` with `priority` under `wlan0` in netplan,
   **not** via `nmcli`. Read this (with `networkplan.md`) before touching Pi networking or re-diagnosing
   dropped scans.
-- `urdf閱讀方法.md` — running notes (in Chinese) on how to validate/view the URDF and known open issues; check
+- `notes/urdf閱讀方法.md` — running notes (in Chinese) on how to validate/view the URDF and known open issues; check
   this file for the current TODO list before doing further URDF work (e.g. missing wheel `<limit>` tags, and
   a `rear_left_wheel_joint` origin RPY that differs from the other three wheels — harmless mathematically
   since it's about the wheel's own rotation axis, but worth visually confirming against SolidWorks).
@@ -208,7 +219,7 @@ urdf_to_graphiz car_assemble_description/urdf/CAR_ASSEMBLE_URDF.urdf   # renders
 ```
 
 To visualize with meshes in RViz, this package must be copied into a ROS 2 workspace (`colcon build`) so
-`package://` mesh paths resolve — see `urdf閱讀方法.md` for the exact workflow, including that the
+`package://` mesh paths resolve — see `notes/urdf閱讀方法.md` for the exact workflow, including that the
 `display.launch.py` RViz view has no saved config (none shipped from the SolidWorks export), so you must add
 the `RobotModel` display and set the fixed frame to `base_link` manually.
 
@@ -230,7 +241,7 @@ figures, not left as a placeholder.
 
 ## Runtime deployment (two-machine setup)
 
-The live robot runs **split across two machines** talking over ROS 2 DDS — `雙機RViz連線.md` is the full
+The live robot runs **split across two machines** talking over ROS 2 DDS — `notes/雙機RViz連線.md` is the full
 runbook (though its "two-machine" description predates the 2026-07-21 SLAM move and should be read alongside
 `slam_pc.launch.py`'s docstring, which explains the current split); the essentials:
 
