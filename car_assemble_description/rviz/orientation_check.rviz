@@ -1,0 +1,198 @@
+Panels:
+  - Class: rviz_common/Displays
+    Help Height: 0
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /base_link 座標軸1
+        - /laser_frame 座標軸1
+      Splitter Ratio: 0.5
+    Tree Height: 900
+  - Class: rviz_common/Views
+    Expanded:
+      - /Current View1
+    Name: Views
+    Splitter Ratio: 0.5
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Alpha: 0.3
+      Cell Size: 0.5
+      Class: rviz_default_plugins/Grid
+      Color: 160; 160; 164
+      Enabled: true
+      Line Style:
+        Line Width: 0.03
+        Value: Lines
+      Name: Grid (0.5m)
+      Normal Cell Count: 0
+      Offset: {X: 0, Y: 0, Z: 0}
+      Plane: XY
+      Plane Cell Count: 20
+      Reference Frame: <Fixed Frame>
+      Value: true
+
+    # ★ 最重要的兩個顯示:直接把座標軸畫大。
+    #   紅=+X 綠=+Y 藍=+Z。不管視角怎麼轉,紅色箭頭永遠是該座標系的 +X。
+    - Class: rviz_default_plugins/Axes
+      Enabled: true
+      Length: 0.4
+      Name: base_link 座標軸
+      Radius: 0.015
+      Reference Frame: base_link
+      Value: true
+    - Class: rviz_default_plugins/Axes
+      Enabled: true
+      Length: 0.3
+      Name: laser_frame 座標軸
+      Radius: 0.008
+      Reference Frame: laser_frame
+      Value: true
+
+    - Alpha: 0.7
+      Class: rviz_default_plugins/RobotModel
+      Description Source: Topic
+      Description Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /robot_description
+      Enabled: true
+      Name: RobotModel
+      Visual Enabled: true
+      Collision Enabled: false
+      Value: true
+
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Class: rviz_default_plugins/LaserScan
+      Color: 255; 255; 255
+      Color Transformer: FlatColor
+      Decay Time: 0
+      Enabled: true
+      Max Intensity: 4096
+      Min Intensity: 0
+      Name: LaserScan (即時)
+      Position Transformer: XYZ
+      Queue Size: 100
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.02
+      Style: Points
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /scan
+      Use Fixed Frame: true
+      Value: true
+
+    - Alpha: 1
+      Class: rviz_default_plugins/LaserScan
+      Color: 255; 170; 0
+      Color Transformer: FlatColor
+      Decay Time: 20
+      Enabled: false
+      Name: LaserScan (疊圖 20s)
+      Position Transformer: XYZ
+      Queue Size: 100
+      Size (Pixels): 3
+      Size (m): 0.015
+      Style: Points
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /scan
+      Use Fixed Frame: true
+      Value: false
+
+    - Angle Tolerance: 0.05
+      Class: rviz_default_plugins/Odometry
+      Covariance:
+        Value: false
+      Enabled: true
+      Keep: 100
+      Name: Odometry 軌跡
+      Position Tolerance: 0.02
+      Shape:
+        Alpha: 1
+        Color: 255; 25; 0
+        Head Length: 0.03
+        Head Radius: 0.02
+        Shaft Length: 0.08
+        Shaft Radius: 0.008
+        Value: Arrow
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /odom
+      Value: true
+
+    - Class: rviz_default_plugins/TF
+      Enabled: true
+      Frame Timeout: 15
+      Frames:
+        All Enabled: true
+      Marker Scale: 0.6
+      Name: TF
+      Show Arrows: false
+      Show Axes: true
+      Show Names: true
+      Update Interval: 0
+      Value: true
+  Enabled: true
+  Global Options:
+    Background Color: 32; 32; 32
+    # odom 而不是 map:這份 config 是「跑 SLAM 之前」用來確認方位的,
+    # 不需要 slam_toolbox 起來也能看。
+    Fixed Frame: odom
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/Interact
+      Hide Inactive Objects: true
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Measure
+      Line color: 128; 128; 0
+    - Class: rviz_default_plugins/FocusCamera
+  Transformation:
+    Current:
+      Class: rviz_default_plugins/TF
+  Value: true
+  Views:
+    Current:
+      # TopDownOrtho = 正投影俯視。**沒有透視變形,角度才量得準**。
+      # (先前用 Orbit 斜視角判讀角度,是誤判 laser_yaw 的原因之一。)
+      Angle: 0
+      Class: rviz_default_plugins/TopDownOrtho
+      Enable Stereo Rendering:
+        Stereo Eye Separation: 0.06
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
+      Invert Z Axis: false
+      Name: Current View
+      Near Clip Distance: 0.01
+      Scale: 250
+      Target Frame: <Fixed Frame>
+      Value: TopDownOrtho (rviz_default_plugins)
+      X: 0
+      Y: 0
+    Saved: ~
+Window Geometry:
+  Displays:
+    collapsed: false
+  Height: 1000
+  Hide Left Dock: false
+  Hide Right Dock: true
+  Views:
+    collapsed: false
+  Width: 1600
+  X: 100
+  Y: 100
