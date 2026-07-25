@@ -169,7 +169,10 @@ RViz(PC 端,Fixed Frame = map)訂閱 /map、/scan、/robot_description、TF、/o
 相關檔案:
 - 驅動與幾何參數:`ominibot_driver/ominibot_driver/driver_node.py`(ROS 參數)、
   `ominibot_hv.py`(送給韌體的設定幀)
-- SLAM 參數:`~/ros2_ws/src/my_robot_lidar/config/mapper_params_online_async.yaml`(**不在本 repo**)
+- SLAM 參數:`car_assemble_description/config/mapper_params_online_async.yaml`
+  (2026-07-21 從 `my_robot_lidar` 搬進本 repo,Pi 與 PC 兩邊讀同一份)
+- 光達驅動與外參:`car_assemble_description/launch/robot_bringup.launch.py` 的 3a / 3b 段
+  (2026-07-25 從 `my_robot_lidar/launch/lidar_start.launch.py` 搬進本 repo)
 - RViz 顯示:`car_assemble_description/rviz/view_robot.rviz`
 
 ---
@@ -235,11 +238,59 @@ RViz(PC 端,Fixed Frame = map)訂閱 /map、/scan、/robot_description、TF、/o
 3. **建圖開太快** —— 麥輪打滑 + C1 只有 10Hz(轉太快時一幀掃描本身就被「拖糊」)。
    建圖時:直線 ≤ 0.15 m/s,**旋轉 ≤ 0.3 rad/s**,轉彎前先停一拍。
 4. **橫移建圖** —— 麥輪橫移的 odom 最爛,建圖階段盡量只用前進+原地轉,少用斜移/橫移。
-5. 以上都修完地圖還糊,才動 slam_toolbox 參數(第八節)。
+5. **光達外參填錯(見下面問題 5)** —— 2026-07-25 新發現,和旋轉量成正比,優先序其實排在第 2 之後。
+6. 以上都修完地圖還糊,才動 slam_toolbox 參數(第八節)。
+
+### 問題 5:光達外參 `base_link -> laser_frame` 是全 0 的佔位值(2026-07-25)
+
+原本這個 TF 由 repo 外的 `~/ros2_ws/src/my_robot_lidar/launch/lidar_start.launch.py` 發布,
+內容是六個 0,註解自己寫著「假設雷達安裝在機器人中心上方」—— **那只是假設,而且是錯的**:
+
+- URDF 的 `lidar_joint` 說光達在 base_link 的 `(0.0088, -0.061, 0.0427)`;
+- 四顆輪子 joint 原點算出的**運動學中心**(板子回報車體速度、odom 實際追蹤的那個點)
+  在 base_link 的 `(-0.0047, -0.047)` —— 也就是 **base_link 本身就不是車子的旋轉中心**
+  (SolidWorks 匯出的原點是任意的);
+- 兩者相減 → 光達相對旋轉中心約 `(+0.014, -0.014)`,不是 `(0, 0)`。
+
+**後果**:原地旋轉時光達實際在繞一個小圓走,SLAM 卻以為它釘在旋轉中心不動 →
+每轉一次,同一面牆被畫到兩個位置 → 雙線牆、走廊彎折、扇形塗抹。
+這是**與旋轉量成正比**的誤差:直走時幾乎看不出來,一轉彎就爆,和「/map 對不上 /scan」的症狀吻合。
+
+**目視快篩**:RViz 裡 `/scan` 的發射原點畫在車體正中央,但 URDF 的 `lidar_link` 模型偏在一邊 ——
+兩者對不起來就是這個 bug。
+
+**修法**:2026-07-25 已把光達 launch 收進本 repo(`robot_bringup.launch.py` 直接起
+`sllidar_node` + 自己的 static TF),外參改成四個 launch arg:
+`laser_x` / `laser_y` / `laser_z` / `laser_yaw`(預設 `0.014` / `-0.014` / `0.109` / `0.0`)。
+**預設值只是上面 CAD 推算的起點,不是量測值**,務必用 §7.3 校準後把結果寫回 launch 的
+`default_value`。launch 檔是 symlink-install,改值不必 rebuild:
+
+```bash
+./run_robot.sh laser_x:=0.02 laser_y:=-0.01
+```
 
 ---
 
 ## 七、校準程序(修完參數必做)
+
+> **順序不可顛倒:7.1 直線 → 7.2 旋轉 → 7.3 光達外參。**
+> 7.3 的疊圖法是用 `odom` 當固定座標系,odom 刻度本身還是錯的時候,疊出來的糊是 odom
+> 造成的,不是外參造成的,校了也是白校。
+>
+> **工具:`tools/odom_check.py`** —— 即時印出累積位移/轉角(度),比 `ros2 topic echo /odom`
+> 的四元數好讀太多,結束時還直接幫你算出該填的倍率。先把倍率歸 1 再量:
+> ```bash
+> ./run_robot.sh odom_linear_scale:=1.0 gyro_scale:=1.0   # Pi
+> python3 tools/odom_check.py                             # 另一個終端
+> ```
+>
+> **2026-07-25 實測結果(已寫回預設值)**:
+> - 靜止 30 秒累積轉角只飄 +0.1° → **陀螺儀零偏乾淨**,航向問題不是 drift 是刻度。
+> - 直線 1 m:原始輸出報 6.54 m → **`odom_linear_scale = 0.153`**(原本 0.16,只差 4%)。
+> - 旋轉 360°:原始輸出報 335° → **`gyro_scale = 1.075`**(原本 1.0,只差 7%)。
+> - 也就是說 **odom 刻度一直都大致正確**,「地圖不長」不是 odom 低報造成的,
+>   別再往那個方向查(2026-07-25 曾誤判過一次)。
+> - `/odom` 實測 19 Hz(不是舊筆記寫的 30 Hz)。
 
 ### 7.1 直線刻度(驗 wheel_diameter)
 
@@ -265,9 +316,64 @@ ros2 topic echo /odom --field pose.pose.orientation
 - 兩者只影響「和」,先按實車量:輪距 = 左右輪**中心**距,軸距 = 前後軸距,
   量完還差再微調其中一個。
 
-### 7.3 驗收
+### 7.3 光達外參校準
 
-兩項都過後,再跑一次 SLAM 繞房間一圈:
+> **2026-07-25 已用 `tools/analyze_bag.py` 數值校出 `laser_yaw = +167.0°`(2.9146 rad)——
+> 光達幾乎是反裝的。** 先前填 0.0 是地圖扇形塗抹的元凶:odom 說車往前,光達看到的世界
+> 卻幾乎反向流動,scan matching 每一步都在對抗一個近乎顛倒的運動模型。
+> 同一份 bag 也修正了 `gyro_scale` 1.075 → 1.014(odom 報 145.3° vs scan 真值 137.1°),
+> 並確認 **`gyro_z_sign` 是對的**(第一版分析工具符號寫反,一度誤判成要翻轉)。
+>
+> **數值法(推薦,取代下面的目視疊圖法):**
+> ```bash
+> python3 tools/record_diag.py ~/bags/diagN   # Pi;靜止→原地轉360°→靜止→直行1m→靜止
+> python3 tools/analyze_bag.py ~/bags/diagN   # 直接印出該填的 gyro_scale 與 laser_yaw
+> ```
+> 原理是拿 `/scan` 當真值反驗 `/odom`:旋轉段用連續兩幀的環形互相關求真實轉角;
+> 直線段擬合 `Δr(θ) ≈ -d·cos(θ-φ)` 求車在光達座標系的行進方向,與 odom 的方向相減即為 yaw。
+> 改動這些數學後務必跑 `python3 tools/selftest_analyze.py`(合成資料釘死符號約定)。
+>
+> **為什麼目視法會漏掉這個 bug**:如果你是「朝牆直行」來測,180° 的誤差會**保留**
+> 「牆垂直於行進方向」這個關係 —— 看起來完全正常。只有平行走牆、或用數值法才抓得到。
+
+### 7.3-舊 光達外參校準(疊圖法,不用尺;保留作為無工具時的備案)
+
+校 `laser_x` / `laser_y` / `laser_yaw`(問題 5)。核心觀念:**把 SLAM 完全排除在外**,
+只驗「odom + 光達 TF」這條鏈,所以 Fixed Frame 用 `odom` 而**不是** `map`。
+
+**RViz 設定(PC 端)**
+- Fixed Frame → `odom`
+- LaserScan → **Decay Time = 20**(讓 20 秒內的 scan 疊在一起顯示)、Size 調到 0.01–0.02
+- 開車速度照第九節:直線 ≤ 0.15 m/s、旋轉 ≤ 0.3 rad/s
+
+兩個測試**互相獨立**(純平移不會因 yaw 錯而糊、純旋轉不會因 yaw 錯而糊),所以可以一個一個校。
+
+**7.3a 校 `laser_yaw` —— 直線測試**
+
+沿著一面直牆平行慢慢前進約 1 m。
+
+- yaw 對 → 疊出來的牆是一條直線,且**與車子在 odom 裡的行進方向平行**。
+- yaw 差 θ → 牆仍是一條乾淨直線,但相對行進方向**傾斜 θ**(每張 scan 都繞光達原點轉了同樣角度,
+  所以不糊,只是整體歪掉)。量出這個傾角加到 `laser_yaw`,重跑再確認。
+
+**7.3b 校 `laser_x` / `laser_y` —— 原地旋轉測試**
+
+在牆角(兩面互相垂直的牆)前**原地**慢轉 360°。
+
+- 偏移對 → 疊出來的牆收斂成單一清晰的線。
+- 偏移差 e → 牆糊成寬約 **2e** 的帶狀(光達繞半徑 e 的圓走,SLAM 以為它不動)。
+- 用座標下降法:`laser_x` 各試 ±0.01,留比較清晰的那個;再對 `laser_y` 做同樣的事。
+  通常 2–3 輪就收斂。每輪只要重跑 `./run_robot.sh laser_x:=... laser_y:=...`,不用 rebuild。
+
+**順便驗到的東西**:若 360° 轉完牆線**沒有閉合**(起點與終點的同一面牆錯開一個角度),
+那是 `gyro_scale` 沒校準 —— 回去做 §7.2,不是外參的問題。
+
+校完把收斂值寫回 `car_assemble_description/launch/robot_bringup.launch.py` 裡
+`laser_x`/`laser_y`/`laser_yaw` 的 `default_value`,並註明是實驗校準值與日期。
+
+### 7.4 驗收
+
+三項都過後,再跑一次 SLAM 繞房間一圈:
 - 停車時模型不再倒退(或只剩 1–2cm 的微跳);
 - 同一面牆只有一條線,90° 牆角是直角;
 - 回到出發點時 loop closure 不需要大幅拉扯地圖。
@@ -276,13 +382,40 @@ ros2 topic echo /odom --field pose.pose.orientation
 
 ## 八、關鍵參數速查表
 
+### slam_toolbox 的四種 mode(2026-07-25 補)
+
+常被問「是不是該換 mode」。本專案用的是 **online asynchronous**,那已經是即時建圖的標準選擇,
+**換 mode 不會修好破圖**。四種對照:
+
+| 模式 | 節點 / 設定 | 什麼時候用 |
+|---|---|---|
+| **online async** | `async_slam_toolbox_node` | ✅ **本專案現用**。跟不上時丟舊 scan 保即時性 |
+| online sync | `sync_slam_toolbox_node` | 不丟 scan、照順序全處理,但會落後真實時間。優勢只在「CPU 算不動」;本專案的 scan 遺失發生在 tf2 MessageFilter(WiFi jitter 等不到 TF,見 `0721_net_issue_plan.md`),sync 一樣救不了 |
+| **offline** | `offline_slam_toolbox_node` / `ros2 bag play` | 🔧 **除錯神器**,見下面 |
+| localization | async + `mode: localization` | 比賽當天:載入 `maps/` 存好的地圖,只定位不建圖 |
+
+**rosbag 離線除錯迴圈**(強烈建議,調參效率差非常多):
+
+```bash
+# Pi 端:錄一趟(走一圈迷宮)
+ros2 bag record /scan /odom /tf /tf_static -o ~/bags/maze_run1
+# PC 端:拉回來反覆重播,不必再開一次車
+ros2 bag play ~/bags/maze_run1 --clock
+```
+
+好處是**把 WiFi jitter 完全移出等式**(重播是本機讀檔,不會再出現 "queue is full"),
+同一份資料可以反覆試不同參數做 A/B。要拿來掃光達外參(§7.3)時,錄的時候**排除 `/tf_static`**,
+重播時自己發不同的 static TF,一份 bag 就能試完所有偏移組合。
+
 ### ominibot_driver(launch 參數,`./run_robot.sh xxx:=yyy` 直接帶)
 
 | 參數 | 現值 | 作用 / 調法 |
 |---|---|---|
 | `wheel_diameter_mm` | 48 | **距離刻度**。錯 → 停車倒退、牆重影。用 7.1 校 |
-| `wheel_space_mm` | 110(廠設,未量) | **旋轉刻度**(和 axle_space 之和)。錯 → 地圖彎折。用 7.2 校 |
-| `axle_space_mm` | 110(廠設,未量) | 同上 |
+| `wheel_space_mm` | 115(實車量測) | **旋轉刻度**(和 axle_space 之和)。錯 → 地圖彎折。用 7.2 校 |
+| `axle_space_mm` | 96(實車量測) | 同上 |
+| `laser_x` / `laser_y` | 0.014 / -0.014(**CAD 推算,未校**) | **光達外參**平移。錯 → 一轉彎牆就變雙線(問題 5)。影響量級僅 1.4cm |
+| `laser_yaw` | **2.9146(=167°,實測)** | 光達幾乎反裝。填 0 會讓地圖扇形塗抹 —— 這是 2026-07-25 破圖的元凶 |
 | `vx_sign`/`vy_sign`/`wz_sign` | 1 / -1 / -1 | 軸向正負(已實機驗證,勿動;動了 odom 和指令一起反,地圖直接鏡像) |
 | `cmd_vel_timeout` | 0.5s | watchdog:斷線自動停車 |
 
@@ -313,7 +446,7 @@ ros2 topic echo /odom --field pose.pose.orientation
 ## 九、建圖操作守則(TL;DR)
 
 1. 改完參數**重啟 bringup** 才生效(參數是開機時寫進韌體的)。
-2. 先校直線(7.1)再校旋轉(7.2),都過了才開始建正式地圖。
+2. 校準順序:直線(7.1)→ 旋轉(7.2)→ 光達外參(7.3),三項都過了才開始建正式地圖。
 3. 建圖時**慢**:直線 ≤ 0.15 m/s、旋轉 ≤ 0.3 rad/s,轉彎前停一拍,少橫移。
 4. 路線刻意繞回走過的地方(餵 loop closure)。
 5. Fixed Frame 用 `map` 建圖;模型「跳一下」= scan matching 在修正,是好事,

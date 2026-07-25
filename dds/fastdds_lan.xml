@@ -11,6 +11,16 @@
       RemoteServer 的 prefix 44.53.00.5f... 是 `fastdds discovery -i 0`(server-id 0)的
       固定 GUID prefix,不要改。
 
+      **為什麼是 SUPER_CLIENT 而不是 CLIENT(2026-07-26 實測確認)**:
+      Discovery Server 只會把「和你自己端點有配對」的發現資訊送給 CLIENT。
+      `ros2 topic list` / `node list` 自己沒有訂閱任何 topic,所以 server 什麼都不給它 ——
+      結果就是在 Pi 上跑 CLI 只看得到自己創的 /parameter_events 和 /rosout,
+      即使同一個 shell 裡用純 rclpy 訂閱 /odom 可以正常收到 62 筆訊息。
+      這曾被誤判成「CLI 內省在這個架構下就是壞的、不可修」,寫進了 CLAUDE.md。
+      實際上 SUPER_CLIENT 會拿到 server 的**完整**發現資料庫,CLI 就正常了:
+      改成 SUPER_CLIENT 後 `ros2 topic list` 立刻列出全部 11 個 topic。
+      代價是每個 participant 會收到全部發現流量 —— 這個規模的系統完全可忽略。
+
   (2) 資料只走 LAN 介面(interfaceWhiteList = @LAN_IP@ + localhost),排除 tailscale0/docker。
       為什麼:Pi/PC 都同時有 wlan0 + tailscale0(+ docker0)。就算發現接上了,若不綁介面,
       /robot_description、/tf、/map 這類大樣本可能被走 tailscale(MTU 1280)傳 → 分片掉包 →
@@ -47,7 +57,7 @@
                 <useBuiltinTransports>false</useBuiltinTransports>
                 <builtin>
                     <discovery_config>
-                        <discoveryProtocol>CLIENT</discoveryProtocol>
+                        <discoveryProtocol>SUPER_CLIENT</discoveryProtocol>
                         <discoveryServersList>
                             <RemoteServer prefix="44.53.00.5f.45.50.52.4f.53.49.4d.41">
                                 <metatrafficUnicastLocatorList>

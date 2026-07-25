@@ -3,10 +3,13 @@
 一次拉起:
   1. robot_state_publisher —— 用真正的 URDF 發布車體/輪子/lidar_link 的 TF 與 /robot_description
   2. joint_state_publisher —— headless(非 GUI)版,把四顆 continuous 輪子 joint 補 0,讓輪子 TF 存在
-  3. sllidar_node + base_link->laser_frame 靜態 TF —— 沿用 my_robot_lidar/lidar_start.launch.py
+  3. sllidar_node + base_link->laser_frame 靜態 TF —— 2026-07-25 從 my_robot_lidar/
+        lidar_start.launch.py 搬進本 repo(那邊的 TF 是「假設光達在車體中心」的全 0 佔位值,
+        而且檔案在 repo 外不進版控)。外參改成 laser_x/laser_y/laser_z/laser_yaw 四個
+        launch arg,現場可直接帶參數迭代校準,見 SLAM_learning_note.md §7.3。
   4. 底盤(預設 use_fake_odom=false):跑 ominibot_driver(收 /cmd_vel、發 /odom + 真 odom->base_link TF);
         use_fake_odom=true → 改發假的 odom->base_link 靜態 TF(無硬體純看模型時用)
-  5. slam_toolbox(async)—— 沿用 my_robot_lidar 的 mapper 參數
+  5. slam_toolbox(async)—— 讀本 repo config/ 的 mapper 參數(預設不啟動,SLAM 在 PC 端跑)
 
 RViz 一律不在這裡開;請在另一台 Ubuntu PC 上用相同 ROS_DOMAIN_ID 連過來看
 (Pi 端一鍵用 repo 根目錄的 run_robot.sh;PC 端一鍵用 run_rviz.sh。
@@ -17,14 +20,14 @@ RViz 一律不在這裡開;請在另一台 Ubuntu PC 上用相同 ROS_DOMAIN_ID 
   ros2 launch car_assemble_description robot_bringup.launch.py use_slam:=false       # 只出光達+模型,不建圖
   ros2 launch car_assemble_description robot_bringup.launch.py use_fake_odom:=true   # 沒接底盤,只看模型/光達
   ros2 launch car_assemble_description robot_bringup.launch.py ominibot_port:=/dev/ttyS0    # 底盤改接到別的 UART 時
+  ros2 launch car_assemble_description robot_bringup.launch.py laser_x:=0.02 laser_y:=-0.01 # 校光達外參時(不必 rebuild)
 """
 import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition, UnlessCondition
-from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -32,7 +35,6 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 def generate_launch_description():
     desc_share = get_package_share_directory('car_assemble_description')
-    lidar_share = get_package_share_directory('my_robot_lidar')
 
     urdf_path = os.path.join(desc_share, 'urdf', 'CAR_ASSEMBLE_URDF.urdf')
     with open(urdf_path, 'r') as urdf_file:
@@ -60,10 +62,18 @@ def generate_launch_description():
     vel_kp = LaunchConfiguration('vel_kp')
     vel_ki = LaunchConfiguration('vel_ki')
     odom_linear_scale = LaunchConfiguration('odom_linear_scale')
+    cmd_linear_scale = LaunchConfiguration('cmd_linear_scale')
+    cmd_angular_scale = LaunchConfiguration('cmd_angular_scale')
+    motor_direct = LaunchConfiguration('motor_direct')
+    encoder_direct = LaunchConfiguration('encoder_direct')
     odom_angular_scale = LaunchConfiguration('odom_angular_scale')
     use_gyro_heading = LaunchConfiguration('use_gyro_heading')
     gyro_z_sign = LaunchConfiguration('gyro_z_sign')
     gyro_scale = LaunchConfiguration('gyro_scale')
+    laser_x = LaunchConfiguration('laser_x')
+    laser_y = LaunchConfiguration('laser_y')
+    laser_z = LaunchConfiguration('laser_z')
+    laser_yaw = LaunchConfiguration('laser_yaw')
 
     return LaunchDescription([
         # 預設 false:SLAM 已改到 PC 端跑(async scan matching 太吃 CPU,Pi 4 追不上
@@ -103,20 +113,59 @@ def generate_launch_description():
         DeclareLaunchArgument('vel_kp', default_value='3000', description='速度環 Kp'),
         DeclareLaunchArgument('vel_ki', default_value='1050', description='速度環 Ki'),
         # odom 刻度校正:板子回授速度用寫死的內部校正,不吃上面的幾何 config,
-        # 實測 odom 灌水 ~5x → 乘 0.2 修回真實單位。這是唯一有效的 odom 校準手段。
-        # 直線用 1m 測試(§7.1)、旋轉用 720° 測試(§7.2)校準;設 1.0 看原始輸出。
-        DeclareLaunchArgument('odom_linear_scale', default_value='0.16',
-                              description='直線速度校正倍率(實測 raw 灌水 ~6.25x → 0.16)。'),
+        # 實測 raw 灌水 6.54x → 乘 0.153 修回真實單位。這是唯一有效的 odom 校準手段。
+        # 用 tools/odom_check.py 跑 §7.1 / §7.2 校準;設 1.0 看原始輸出。
+        DeclareLaunchArgument('odom_linear_scale', default_value='0.153',
+                              description='直線速度校正倍率(2026-07-25 實測 1m: raw 灌水 6.54x → 0.153)。'),
         DeclareLaunchArgument('odom_angular_scale', default_value='0.195',
                               description='輪速 az 的旋轉校正(只在 use_gyro_heading=false 時用)。'),
+        # 命令刻度校正 —— 同一個標定誤差的**另一半**。板子收到 /cmd_vel 也用同一套
+        # 寫死的內部校正去解讀,2026-07-25 實測命令 0.15 m/s 車子只跑 0.019 m/s。
+        # 在此之前只修了回授那一半,所以 teleop 預設值才會被迫加到 0.6 m/s / 1.5 rad/s
+        # 這種對 15cm 小車來說荒謬的數字。用 tools/vel_sweep.py 校(跑之前先設 1.0)。
+        DeclareLaunchArgument('cmd_linear_scale', default_value='1.0',
+                              description='送給板子的直線速度倍率(1.0=未校正,用 tools/vel_sweep.py 校)。'),
+        DeclareLaunchArgument('cmd_angular_scale', default_value='1.0',
+                              description='送給板子的角速度倍率(1.0=未校正,用 tools/vel_sweep.py --axis yaw 校)。'),
+        # 馬達/編碼器方向 bitmask(原廠值,對應 CircusPi 參考車的接線,從未對這台驗證過)。
+        # 2026-07-25 曾因 tools/wheel_test.py 報「三顆輪子只有單一方向能動」而懷疑這裡,
+        # 但那個結果已作廢:重跑一次故障輪就換一顆,且操作者目視確認四顆輪子正反轉都正常。
+        # 真正原因是回報值在 ~2.77 飽和,平均值量到的其實是起步時間。**沒有證據顯示接線有問題**,
+        # 這兩個維持原廠值,開出來只是為了萬一日後又懷疑時能便宜地驗證。
+        DeclareLaunchArgument('motor_direct', default_value='0',
+                              description='馬達方向 bitmask(原廠 0,未驗證)。'),
+        DeclareLaunchArgument('encoder_direct', default_value='10',
+                              description='編碼器方向 bitmask(原廠 10=0b1010,未驗證;試 0 或 15)。'),
         # 航向來源:輪速 az 被麥輪打滑毀掉(實測轉 360° 輪速報 2270°),改用板子
         # 原始陀螺儀 Z 積分(實測 360° 準到 ~350°,不受打滑影響)。四元數無磁力計 yaw 凍結不能用。
         DeclareLaunchArgument('use_gyro_heading', default_value='true',
                               description='true=odom 朝向用陀螺儀(麥輪車正解);false=退回輪速 az。'),
         DeclareLaunchArgument('gyro_z_sign', default_value='1.0',
                               description='陀螺 Z 正負號(odom 轉向反了就設 -1.0)。'),
-        DeclareLaunchArgument('gyro_scale', default_value='1.0',
-                              description='陀螺積分倍率(實測 ~1.0,需要再微調)。'),
+        DeclareLaunchArgument('gyro_scale', default_value='1.014',
+                              description='陀螺積分倍率(2026-07-25 tools/analyze_bag.py:odom 報 145.3° vs scan 真值 137.1° → 1.075×0.9435)。'),
+        # 光達外參(base_link -> laser_frame)。舊的 my_robot_lidar/lidar_start.launch.py
+        # 這裡填全 0(註解自承是「假設雷達安裝在機器人中心上方」),但光達並不在中心:
+        # URDF 的 lidar_joint 在 (0.0088, -0.061, 0.0427),而四顆輪子 joint 原點算出的
+        # 運動學中心(odom 實際追蹤的點)在 base_link 的 (-0.0047, -0.047) —— 兩者相減,
+        # 光達相對運動學中心約 (+0.014, -0.014)。偏移填 0 的後果:原地旋轉時光達其實在
+        # 繞一個小圓走,SLAM 卻以為它釘在原點 → 每轉一次牆就被畫歪 → 雙線牆、走廊彎折。
+        # laser_yaw 已於 2026-07-25 用 tools/analyze_bag.py 實測校準(見下)。
+        # laser_x/laser_y 仍是 CAD 推算值,尚未校(量級只有 1.4cm,遠小於 yaw 的影響)。
+        DeclareLaunchArgument('laser_x', default_value='0.014',
+                              description='光達相對運動學中心的前後偏移(m,前為正)。用 §7.3 原地旋轉疊圖法校。'),
+        DeclareLaunchArgument('laser_y', default_value='-0.014',
+                              description='光達相對運動學中心的左右偏移(m,左為正)。用 §7.3 原地旋轉疊圖法校。'),
+        DeclareLaunchArgument('laser_z', default_value='0.109',
+                              description='光達離地高度(m)。2D SLAM 用不到,只影響 RViz 立體顯示。'),
+        # ★ 2026-07-25 實測:光達幾乎是反裝的。tools/analyze_bag.py 在直線段解出
+        #   車在光達座標系的行進方向是 -167.0°,而 odom 說是 +0.0° → 兩者差 167°。
+        #   品質:航向變化僅 0.5°、vy=0.0000、43 幀逐幀估計標準誤差 ±0.8°。
+        #   與 CAD 互相印證(輪子座標顯示 base_link 整個轉了 180°),差的 13° 是實際安裝歪斜。
+        #   先前填 0.0 是致命錯誤:odom 說往前、光達看到的世界卻幾乎反向流動,
+        #   scan matching 每一步都在對抗一個近乎顛倒的運動模型 → 地圖扇形塗抹。
+        DeclareLaunchArgument('laser_yaw', default_value='2.9146',
+                              description='光達 0° 相對車頭的旋轉(rad)。2026-07-25 實測 +167.0°(近乎反裝)。'),
 
         # 1. 車體模型 TF + /robot_description(PC 端 RViz 的 RobotModel 會訂閱這個 topic)
         Node(
@@ -135,11 +184,34 @@ def generate_launch_description():
             output='screen',
         ),
 
-        # 3. 光達驅動 + base_link->laser_frame 靜態 TF(沿用你現有的檔案)
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(
-                os.path.join(lidar_share, 'launch', 'lidar_start.launch.py')
-            )
+        # 3a. RPLidar C1 驅動。參數沿用原本 my_robot_lidar/lidar_start.launch.py 的設定;
+        #     serial_port 是 udev/99-rplidar.rules 綁出來的穩定名稱(不是 /dev/ttyUSB*)。
+        Node(
+            package='sllidar_ros2',
+            executable='sllidar_node',
+            name='sllidar_node',
+            output='screen',
+            parameters=[{
+                'channel_type': 'serial',
+                'serial_port': '/dev/rplidar',
+                'serial_baudrate': 460800,   # C1 建議值;不穩可退回 115200
+                'frame_id': 'laser_frame',
+                'inverted': False,
+                'angle_compensate': True,
+                'scan_mode': 'Standard',
+            }],
+        ),
+
+        # 3b. base_link -> laser_frame 外參。arguments 順序是 x y z yaw pitch roll parent child。
+        #     值由上面的 laser_* launch arg 餵,現場校準不必改檔也不必 rebuild:
+        #       ./run_robot.sh laser_x:=0.02 laser_y:=-0.01
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='base_link_to_laser',
+            arguments=[laser_x, laser_y, laser_z, laser_yaw, '0', '0',
+                       'base_link', 'laser_frame'],
+            output='screen',
         ),
 
         # 4a. use_fake_odom=true:暫時的假里程計 odom->base_link 靜態 TF。
@@ -175,6 +247,10 @@ def generate_launch_description():
                 'vel_ki': ParameterValue(vel_ki, value_type=int),
                 'odom_linear_scale': ParameterValue(odom_linear_scale, value_type=float),
                 'odom_angular_scale': ParameterValue(odom_angular_scale, value_type=float),
+                'cmd_linear_scale': ParameterValue(cmd_linear_scale, value_type=float),
+                'cmd_angular_scale': ParameterValue(cmd_angular_scale, value_type=float),
+                'motor_direct': ParameterValue(motor_direct, value_type=int),
+                'encoder_direct': ParameterValue(encoder_direct, value_type=int),
                 'use_gyro_heading': ParameterValue(use_gyro_heading, value_type=bool),
                 'gyro_z_sign': ParameterValue(gyro_z_sign, value_type=float),
                 'gyro_scale': ParameterValue(gyro_scale, value_type=float),
@@ -182,7 +258,7 @@ def generate_launch_description():
             condition=UnlessCondition(use_fake_odom),
         ),
 
-        # 5. SLAM Toolbox(async),沿用 my_robot_lidar 的參數
+        # 5. SLAM Toolbox(async),讀本 repo config/ 的參數
         Node(
             package='slam_toolbox',
             executable='async_slam_toolbox_node',

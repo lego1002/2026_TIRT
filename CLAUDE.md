@@ -44,8 +44,10 @@ human-editable text.
     was dropped (the ROS 1 `/calibrated` rostopic-pub step has no ROS 2 equivalent and was removed).
   - `launch/robot_bringup.launch.py` — the **real** on-robot entry point (headless, GUI-free), meant to run on
     the Raspberry Pi. It brings up `robot_state_publisher` + a non-GUI `joint_state_publisher` (zeros the four
-    wheel joints so their TFs exist) + the RPLidar driver (via `my_robot_lidar`'s `lidar_start.launch.py`,
-    still an out-of-repo dependency) + the chassis driver, plus optionally SLAM Toolbox (async) on the Pi
+    wheel joints so their TFs exist) + the RPLidar driver (`sllidar_ros2`'s `sllidar_node`, launched
+    **directly by this file** as of 2026-07-25 — it used to `IncludeLaunchDescription` out-of-repo
+    `my_robot_lidar`'s `lidar_start.launch.py`; see the `laser_*` args below for why that moved in) + the
+    chassis driver, plus optionally SLAM Toolbox (async) on the Pi
     itself. Launch args: `use_slam` (**default false** as of 2026-07-21 — SLAM moved to the PC, see
     `slam_pc.launch.py` below; set `true` for a single-machine fallback), `use_fake_odom` (default false — the
     real `ominibot_driver` runs by default; set `true` for hardware-free model/lidar viewing), and
@@ -55,7 +57,17 @@ human-editable text.
     gains (`pos_kp`/`pos_ki`/`pos_kd`/`vel_kp`/`vel_ki`), `odom_linear_scale`/`odom_angular_scale`, and
     `use_gyro_heading`/`gyro_z_sign`/`gyro_scale` — see the `ominibot_driver` section below for what each does.
     Keep the launch defaults in sync with `driver_node.py`'s, since passing a launch arg explicitly overrides
-    the node's own default.
+    the node's own default. It also owns the lidar extrinsic — `laser_x`/`laser_y`/`laser_z`/`laser_yaw`
+    (defaults `0.014`/`-0.014`/`0.109`/`0.0`), fed to the `base_link -> laser_frame`
+    `static_transform_publisher`. **These are un-calibrated CAD estimates, not measured values.** The old
+    `my_robot_lidar` version of this TF was all zeros with a comment admitting it "assumed the lidar is
+    mounted at the robot's center", but the URDF's `lidar_joint` puts the lidar at
+    `(0.0088, -0.061, 0.0427)` and the wheel-joint centroid (the point `odom` actually tracks) sits at
+    `(-0.0047, -0.047)` in `base_link` — so the lidar is ~1.4 cm off the rotation center in each axis, not 0.
+    A zero here makes the lidar orbit a small circle during in-place spins while SLAM thinks it is fixed,
+    which smears walls into double lines on every turn — the prime suspect for the broken maps. Calibrate
+    with the overlay procedure in `notes/SLAM_learning_note.md` §7.3 (no rebuild needed: pass
+    `./run_robot.sh laser_x:=... laser_y:=...`), then write the converged values back as the defaults here.
   - `launch/slam_pc.launch.py` — the SLAM entry point, run on the **PC**, not the Pi. `async_slam_toolbox_node`
     is CPU-bound and the Pi 4 couldn't keep up with the lidar's 10 Hz scan rate while also running
     `robot_state_publisher` + `joint_state_publisher` + the lidar driver + `ominibot_driver`: the scan queue
@@ -166,17 +178,43 @@ human-editable text.
 - `run_robot.sh` / `run_slam.sh` / `run_rviz.sh` / `save_map.sh` — one-click entry points (see "Runtime
   deployment" below).
 - `maps/` — saved SLAM maps (`.pgm` + `.yaml` pairs) produced by `save_map.sh`.
+- `tools/` — standalone diagnostic scripts (plain `python3 foo.py`, no colcon package, no rebuild).
+  `odom_check.py` prints live cumulative displacement/heading from `/odom` in metres and **degrees**
+  (far more readable than echoing quaternions) and, on Ctrl-C, computes the `odom_linear_scale` /
+  `gyro_scale` you should set — run the 1 m and 360° tests with both scales forced to `1.0` so the
+  numbers it prints are absolute. `map_check.py` counts `/map`'s unknown/free/occupied cells per
+  update, to distinguish "SLAM is republishing a dead map on `map_update_interval`" from "the map is
+  actually growing" — `ros2 topic hz /map` cannot tell those apart. It subscribes with
+  `TRANSIENT_LOCAL` durability to match slam_toolbox's latched publisher.
+  `record_diag.py <out_dir>` **replaces `ros2 bag record` on the Pi**, which silently produces an empty
+  bag there: `ros2 bag record` finds its publishers through the same CLI graph query that is blind under
+  the Discovery Server, so it subscribes to nothing and reports no error (verified 2026-07-25 — a 60 s
+  recording yielded 0 topics / 0 messages). This script subscribes with plain rclpy (endpoint matching by
+  topic name, which works) and writes a standard rosbag2 via `rosbag2_py`, so `ros2 bag play` still works
+  on it. It subscribes `/tf_static` with `TRANSIENT_LOCAL` — miss that and the recorded bag has no
+  `base_link->laser_frame`, breaking the TF chain on replay.
+  `analyze_bag.py <bag_dir>` treats `/scan` as ground truth to audit `/odom`: it auto-segments the
+  recording on odom twist, recovers the true rotation over a spin by circular cross-correlation of
+  consecutive scans (→ `gyro_scale`, and catches a flipped `gyro_z_sign`), and recovers the true heading
+  offset by least-squares fitting `Δr(θ) ≈ -d·cos(θ-φ)` over a straight run (→ `laser_yaw`). Record with
+  `record_diag.py` following the still → spin 360° → still → drive 1 m → still routine; the stationary
+  gaps are what the segmenter keys on.
 - `docs/` — reference documents: the competition rulebook PDF (`2026TIRT-迷宮機器人挑戰賽.pdf`), the OminiBotHV
   serial-protocol/kinematics spec PDF (a copy of the one in `OminiBotHV-master/communication/`), and field-test
   screenshots. As of the 2026-07-25 "reorganize the structure" commit, all the Chinese design/field-test notes
   moved from the repo root into `notes/` (`SLAM_learning_note.md`, `command_note.md`, `urdf閱讀方法.md`,
   `雙機RViz連線.md`); `networkplan.md` and `0721_net_issue_plan.md` stayed at the root.
-- `build/`, `install/`, `log/` — colcon output that the same 2026-07-25 commit **accidentally committed** into
-  git even though these are the workspace's throwaway artifacts. `.gitignore` was updated (uncommitted at the
-  time of writing) to add `/build`, `/install`, `/log`, but they're already tracked, so `.gitignore` alone
-  won't untrack them — a `git rm -r --cached build install log` is still needed. Ignore their contents; the
-  editable sources live in `car_assemble_description/` and `ominibot_driver/`, and both packages are symlinked
-  into `~/ros2_ws/src/` (the real build workspace) rather than built in-tree here.
+- `build/`, `install/`, `log/` — **gone, and must stay gone.** These were colcon output accidentally committed
+  in the 2026-07-25 reorg; `be73e1f` untracked them, `.gitignore` covers `/build` `/install` `/log`, and the
+  leftover local copies were deleted on 2026-07-25. **Never `colcon build` from the repo root.** That in-tree
+  `install/` was a real-file (non-`--symlink-install`) copy that froze whatever the source looked like at build
+  time, and because it shadows the real workspace on `AMENT_PREFIX_PATH` it silently runs stale code: on
+  2026-07-25 it cost a debugging session, serving `odom_linear_scale = 0.16` and a `robot_bringup.launch.py`
+  with no `laser_*` args while the live source had both — the running `ominibot_driver` was the stale copy, so
+  none of that session's fixes were actually being exercised. The editable sources live in
+  `car_assemble_description/` and `ominibot_driver/`, both symlinked into `~/ros2_ws/src/`, which is the **only**
+  build workspace. **Always `source ~/ros2_ws/install/setup.bash`, never `source install/setup.bash` from the
+  repo root** (`run_robot.sh` already gets this right; a manual source in the same shell can shadow it).
 - `notes/雙機RViz連線.md` — the definitive runbook (Chinese) for the two-machine visualization workflow; read it
   before touching bringup, DDS, or RViz-connectivity issues. Caveat: its 待辦 section's three 2026-07-14
   items (reversed turn, custom teleop, map drift) have all since been fixed in code — trust the code and
@@ -260,14 +298,17 @@ runbook (though its "two-machine" description predates the 2026-07-21 SLAM move 
   map). `./run_rviz.sh` opens `rviz2` with `rviz/view_robot.rviz` (Grid, RobotModel, LaserScan, Map, Odometry,
   TF preconfigured; Fixed Frame `map`). Both need `car_assemble_description` built locally on the PC (for
   `package://` mesh paths and the in-repo `mapper_params_online_async.yaml`) plus `ros-humble-slam-toolbox`
-  installed — but not `my_robot_lidar`/`sllidar_ros2`, which stay Pi-only.
+  installed — but not `sllidar_ros2`, which stays Pi-only.
 - The operator then opens two more terminals on the PC: `ros2 run ominibot_driver mecanum_teleop` to drive,
   and `./save_map.sh <name>` to save the map (wraps `map_saver_cli` with `save_map_timeout:=10.0` — the
   default ~2 s timeout often misses the latched `/map` and errors out; bare names land in `maps/`).
 
-`car_assemble_description` is not self-contained at runtime: `robot_bringup.launch.py` still depends on
-`my_robot_lidar`/`sllidar_ros2` for the lidar driver, which live in the ROS 2 workspace (`~/ros2_ws/src/`),
-**not in this git repo** — plus `ominibot_driver`, which *is* in this repo (symlinked into the workspace).
+`car_assemble_description` is not fully self-contained at runtime: `robot_bringup.launch.py` still depends on
+`sllidar_ros2` for the lidar driver node, which lives in the ROS 2 workspace (`~/ros2_ws/src/`), **not in this
+git repo** — plus `ominibot_driver`, which *is* in this repo (symlinked into the workspace). The
+`my_robot_lidar` dependency is **gone** as of 2026-07-25: its `lidar_start.launch.py` was inlined into
+`robot_bringup.launch.py` (see the `laser_*` args) so the lidar extrinsic lives under version control here
+instead of in an out-of-repo file.
 `slam_toolbox` itself must be installed on whichever machine runs SLAM (PC by default, or the Pi if
 `use_slam:=true`), but its config now ships inside this repo. `robot_bringup.launch.py` launches
 `ominibot_driver` when `use_fake_odom:=false` and the fake static `odom->base_link` TF otherwise; the two are
@@ -287,9 +328,18 @@ two-machine link needs, and both are mandatory:
   (+ `docker0`); without it, large samples (`/robot_description`, `/tf`, `/map`) route over tailscale's
   1280-MTU link and fragment-drop while small discovery packets still get through.
 
-When debugging connectivity, "topic appears in `list`" ≠ "data is arriving" (and now, *before* that, "node
-appears in `node list`" is itself the thing that fails first) — confirm with `ros2 topic echo
+When debugging connectivity, "topic appears in `list`" ≠ "data is arriving" — confirm with `ros2 topic echo
 /robot_description --once` actually printing. Remember the **ros2 daemon caches discovery config**: if things
 look wrong right after re-sourcing, `ros2 daemon stop` and retry (`setup_dds.sh` does this automatically).
+
+**`ros2 topic list` used to be blind on the Pi; that is fixed as of 2026-07-26** — the cause was
+`<discoveryProtocol>CLIENT</discoveryProtocol>` in `dds/fastdds_lan.xml`. A Discovery Server only forwards to a
+CLIENT the discovery data that *matches that client's own endpoints*; `ros2 topic list` subscribes to nothing,
+so it was told nothing and listed only its own `/parameter_events` and `/rosout` — while a plain rclpy
+subscriber in the same shell happily received 62 `/odom` messages in 5 s. The profile now uses
+**`SUPER_CLIENT`**, which receives the server's *complete* discovery database; `ros2 topic list` immediately
+returns all 11 topics. The extra discovery traffic is negligible at this scale. Note the earlier conclusion
+recorded here — "CLI graph introspection is simply broken under the Discovery Server, do not treat an empty
+list as a fault" — was **wrong**, and cost several debugging sessions of flying blind on the Pi.
 Set RViz Fixed Frame to `base_link` first (SLAM takes ~10-15s to create the `map` frame; `map` before then
 reads as a blank "does not exist" screen).

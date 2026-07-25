@@ -3,6 +3,7 @@
   /cmd_vel (geometry_msgs/Twist)  -->  robot_speed(lx, ly, az) over serial
   board feedback frame            -->  /odom (nav_msgs/Odometry) + odom->base_link TF
                                        /imu  (sensor_msgs/Imu, orientation only)
+                                       /battery_voltage (std_msgs/Float32)
 
 Odometry is dead-reckoned from the board's reported body velocities (smooth and
 locally consistent -- exactly what slam_toolbox wants from the `odom` frame). The IMU
@@ -21,6 +22,7 @@ from geometry_msgs.msg import Quaternion, Twist, TransformStamped
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from sensor_msgs.msg import Imu
+from std_msgs.msg import Float32
 from tf2_ros import TransformBroadcaster
 
 from ominibot_driver.ominibot_hv import OminiBotHV
@@ -87,13 +89,43 @@ class OminiBotDriver(Node):
         # the 0x24/0x23 geometry config on the feedback path (verified on
         # hardware: a config readback confirms gear_ratio etc. are stored, yet
         # changing them does not move odom at all). Result: odom over-reports
-        # ~5x. These scales multiply the reported velocity back to real SI units
+        # ~6.5x. These scales multiply the reported velocity back to real SI units
         # before integration -- this is the ONLY working odom calibration lever.
         # odom_linear_scale from the 1 m straight test (SLAM_learning_note.md
         # §7.1); odom_angular_scale from the 720 deg spin test (§7.2). Set both
-        # to 1.0 to see the board's raw (uncorrected) output.
-        self.declare_parameter('odom_linear_scale', 0.16)    # measured: raw over-reports ~6.25x (5.0-6.55 across runs)
+        # to 1.0 to see the board's raw (uncorrected) output, which is how the
+        # 2026-07-25 numbers below were taken (tools/odom_check.py).
+        self.declare_parameter('odom_linear_scale', 0.153)   # 2026-07-25 1m test: raw over-reports 6.54x
         self.declare_parameter('odom_angular_scale', 0.195)  # wheel-az fallback scale (only if use_gyro_heading=False)
+        # Command-velocity correction -- the OTHER HALF of the same calibration
+        # error. The board mis-scales the /cmd_vel it receives by the same fixed
+        # internal calibration, so a 0.15 m/s command produced only 0.019 m/s of
+        # real motion (measured 2026-07-25, tools/step_response.py; /odom and
+        # direct observation agreed -- the robot moved <2 cm over a whole test).
+        # Only the feedback half had been corrected until then, which is why the
+        # teleop defaults had crept up to an absurd 0.6 m/s / 1.5 rad/s for a
+        # 15 cm robot: they were compensating for this by hand.
+        # Calibrate with tools/vel_sweep.py, which regresses actual-vs-commanded
+        # and prints the scale directly. Default 1.0 = uncorrected (the value the
+        # sweep must be run with).
+        self.declare_parameter('cmd_linear_scale', 1.0)
+        self.declare_parameter('cmd_angular_scale', 1.0)
+        # Per-motor direction bitmasks written into the board at startup (0x23
+        # config frame). Both are CircusPi FACTORY values for the reference
+        # robot's wiring, never verified against this build. encoder_direct=10
+        # is 0b1010 -- i.e. motors 2 and 4 decoded reversed.
+        # Exposed 2026-07-25 chasing an apparent "3 of 4 wheels only work in one
+        # direction" result from tools/wheel_test.py. That result was RETRACTED:
+        # re-running moved the fault to different wheels every time, and the
+        # operator confirmed all four wheels spin fine both ways by eye. It was a
+        # measurement artifact (reported body velocity saturates at ~2.77, so the
+        # average was really measuring spin-up time). No wiring fault has been
+        # demonstrated -- these stay at the factory values and are exposed only
+        # so the hypothesis can be tested cheaply if it ever comes back:
+        #     ./run_robot.sh encoder_direct:=0
+        #     ./run_robot.sh encoder_direct:=15
+        self.declare_parameter('motor_direct', 0)
+        self.declare_parameter('encoder_direct', 10)
         # Heading source. The wheel-derived az is destroyed by mecanum roller
         # slip -- a real 360 deg spin over-reports as ~2270 deg of wheel az. The
         # board's raw gyro-Z is a direct yaw-rate measurement, accurate to ~3%
@@ -101,7 +133,7 @@ class OminiBotDriver(Node):
         # IMU quaternion is useless: 6-axis, no magnetometer -> yaw is frozen.)
         self.declare_parameter('use_gyro_heading', True)
         self.declare_parameter('gyro_z_sign', 1.0)   # flip to -1.0 if odom yaw turns the wrong way
-        self.declare_parameter('gyro_scale', 1.0)     # 360 deg spin read ~350 deg; ~1.0, refine if needed
+        self.declare_parameter('gyro_scale', 1.014)   # 2026-07-25 analyze_bag: odom 145.3 deg vs scan truth 137.1 deg
 
         port = self.get_parameter('port').value
         baud = self.get_parameter('baud').value
@@ -117,11 +149,15 @@ class OminiBotDriver(Node):
         self.sz = self.get_parameter('angular_z_sign').value
         self.odom_lin_scale = self.get_parameter('odom_linear_scale').value
         self.odom_ang_scale = self.get_parameter('odom_angular_scale').value
+        self.cmd_lin_scale = self.get_parameter('cmd_linear_scale').value
+        self.cmd_ang_scale = self.get_parameter('cmd_angular_scale').value
         self.use_gyro_heading = self.get_parameter('use_gyro_heading').value
         self.gyro_sign = self.get_parameter('gyro_z_sign').value
         self.gyro_scale = self.get_parameter('gyro_scale').value
 
         wheel_diameter = self.get_parameter('wheel_diameter_mm').value
+        motor_direct = self.get_parameter('motor_direct').value
+        encoder_direct = self.get_parameter('encoder_direct').value
         wheel_space = self.get_parameter('wheel_space_mm').value
         axle_space = self.get_parameter('axle_space_mm').value
         encoder_ppr = self.get_parameter('encoder_ppr').value
@@ -140,6 +176,8 @@ class OminiBotDriver(Node):
             f'gear_ratio={gear_ratio}, pos_pid=({pos_kp},{pos_ki},{pos_kd}), '
             f'vel_pid=({vel_kp},{vel_ki}))')
         self.bot = OminiBotHV(port=port, baud=baud,
+                              motor_direct=motor_direct,
+                              encoder_direct=encoder_direct,
                               wheel_diameter=wheel_diameter,
                               wheel_space=wheel_space,
                               axle_space=axle_space,
@@ -159,6 +197,14 @@ class OminiBotDriver(Node):
         self.create_subscription(Twist, 'cmd_vel', self._cmd_cb, 10)
         self.odom_pub = self.create_publisher(Odometry, 'odom', 20)
         self.imu_pub = self.create_publisher(Imu, 'imu', 20)
+        # Battery voltage from the same feedback frame. Published because motor
+        # behaviour degrading "after driving for a while" is far more often
+        # supply sag than mechanical wear -- a sagging pack lowers available
+        # torque, the board's velocity PID pushes harder to hold the setpoint,
+        # and the result reads as stutter. Without this topic that hypothesis
+        # can't be told apart from gearbox backlash. Low rate: it changes slowly.
+        self.batt_pub = self.create_publisher(Float32, 'battery_voltage', 10)
+        self._batt_decim = 0
         self.tf_broadcaster = TransformBroadcaster(self)
 
         # Watchdog / command re-send timer (runs in the executor thread).
@@ -182,7 +228,12 @@ class OminiBotDriver(Node):
         if stale > self.cmd_vel_timeout:
             lx = ly = az = 0.0
         try:
-            self.bot.robot_speed(self.sx * lx, self.sy * ly, self.sz * az)
+            # cmd_*_scale converts real SI units into whatever the board thinks
+            # they are (see the parameter declaration). Signs are applied to BOTH
+            # command and feedback so the two stay consistent.
+            self.bot.robot_speed(self.sx * lx * self.cmd_lin_scale,
+                                 self.sy * ly * self.cmd_lin_scale,
+                                 self.sz * az * self.cmd_ang_scale)
         except Exception as exc:  # noqa: BLE001 - keep node alive on serial hiccup
             self.get_logger().warn(f'robot_speed write failed: {exc}')
 
@@ -272,6 +323,12 @@ class OminiBotDriver(Node):
             # accel/gyro layout unverified -> mark as unavailable per REP-145.
             imu.linear_acceleration_covariance[0] = -1.0
             self.imu_pub.publish(imu)
+
+        # ~1 Hz (feedback streams at ~20 Hz); battery voltage is a slow signal.
+        self._batt_decim += 1
+        if self._batt_decim >= 20:
+            self._batt_decim = 0
+            self.batt_pub.publish(Float32(data=float(data['battery'])))
 
     def destroy_node(self):
         self._running = False
