@@ -1,0 +1,44 @@
+running egg_info
+creating ../build/ominibot_driver/ominibot_driver.egg-info
+writing ../build/ominibot_driver/ominibot_driver.egg-info/PKG-INFO
+writing dependency_links to ../build/ominibot_driver/ominibot_driver.egg-info/dependency_links.txt
+writing entry points to ../build/ominibot_driver/ominibot_driver.egg-info/entry_points.txt
+writing requirements to ../build/ominibot_driver/ominibot_driver.egg-info/requires.txt
+writing top-level names to ../build/ominibot_driver/ominibot_driver.egg-info/top_level.txt
+writing manifest file '../build/ominibot_driver/ominibot_driver.egg-info/SOURCES.txt'
+reading manifest file '../build/ominibot_driver/ominibot_driver.egg-info/SOURCES.txt'
+writing manifest file '../build/ominibot_driver/ominibot_driver.egg-info/SOURCES.txt'
+running build
+running build_py
+creating /home/lego/2026_TIRT/build/ominibot_driver/build
+creating /home/lego/2026_TIRT/build/ominibot_driver/build/lib
+creating /home/lego/2026_TIRT/build/ominibot_driver/build/lib/ominibot_driver
+copying ominibot_driver/teleop_node.py -> /home/lego/2026_TIRT/build/ominibot_driver/build/lib/ominibot_driver
+copying ominibot_driver/__init__.py -> /home/lego/2026_TIRT/build/ominibot_driver/build/lib/ominibot_driver
+copying ominibot_driver/driver_node.py -> /home/lego/2026_TIRT/build/ominibot_driver/build/lib/ominibot_driver
+copying ominibot_driver/ominibot_hv.py -> /home/lego/2026_TIRT/build/ominibot_driver/build/lib/ominibot_driver
+running install
+running install_lib
+creating /home/lego/2026_TIRT/install/ominibot_driver/lib/python3.10/site-packages/ominibot_driver
+copying /home/lego/2026_TIRT/build/ominibot_driver/build/lib/ominibot_driver/teleop_node.py -> /home/lego/2026_TIRT/install/ominibot_driver/lib/python3.10/site-packages/ominibot_driver
+copying /home/lego/2026_TIRT/build/ominibot_driver/build/lib/ominibot_driver/__init__.py -> /home/lego/2026_TIRT/install/ominibot_driver/lib/python3.10/site-packages/ominibot_driver
+copying /home/lego/2026_TIRT/build/ominibot_driver/build/lib/ominibot_driver/driver_node.py -> /home/lego/2026_TIRT/install/ominibot_driver/lib/python3.10/site-packages/ominibot_driver
+copying /home/lego/2026_TIRT/build/ominibot_driver/build/lib/ominibot_driver/ominibot_hv.py -> /home/lego/2026_TIRT/install/ominibot_driver/lib/python3.10/site-packages/ominibot_driver
+byte-compiling /home/lego/2026_TIRT/install/ominibot_driver/lib/python3.10/site-packages/ominibot_driver/teleop_node.py to teleop_node.cpython-310.pyc
+byte-compiling /home/lego/2026_TIRT/install/ominibot_driver/lib/python3.10/site-packages/ominibot_driver/__init__.py to __init__.cpython-310.pyc
+byte-compiling /home/lego/2026_TIRT/install/ominibot_driver/lib/python3.10/site-packages/ominibot_driver/driver_node.py to driver_node.cpython-310.pyc
+byte-compiling /home/lego/2026_TIRT/install/ominibot_driver/lib/python3.10/site-packages/ominibot_driver/ominibot_hv.py to ominibot_hv.cpython-310.pyc
+running install_data
+creating /home/lego/2026_TIRT/install/ominibot_driver/share/ament_index
+creating /home/lego/2026_TIRT/install/ominibot_driver/share/ament_index/resource_index
+creating /home/lego/2026_TIRT/install/ominibot_driver/share/ament_index/resource_index/packages
+copying resource/ominibot_driver -> /home/lego/2026_TIRT/install/ominibot_driver/share/ament_index/resource_index/packages
+copying package.xml -> /home/lego/2026_TIRT/install/ominibot_driver/share/ominibot_driver
+creating /home/lego/2026_TIRT/install/ominibot_driver/share/ominibot_driver/launch
+copying launch/ominibot_driver.launch.py -> /home/lego/2026_TIRT/install/ominibot_driver/share/ominibot_driver/launch
+running install_egg_info
+Copying ../build/ominibot_driver/ominibot_driver.egg-info to /home/lego/2026_TIRT/install/ominibot_driver/lib/python3.10/site-packages/ominibot_driver-0.0.1-py3.10.egg-info
+running install_scripts
+Installing mecanum_teleop script to /home/lego/2026_TIRT/install/ominibot_driver/lib/ominibot_driver
+Installing ominibot_driver_node script to /home/lego/2026_TIRT/install/ominibot_driver/lib/ominibot_driver
+writing list of installed files to '/home/lego/2026_TIRT/build/ominibot_driver/install.log'

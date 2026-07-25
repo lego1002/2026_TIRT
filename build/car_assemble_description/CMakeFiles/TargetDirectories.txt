@@ -1,0 +1,9 @@
+/home/lego/2026_TIRT/build/car_assemble_description/CMakeFiles/uninstall.dir
+/home/lego/2026_TIRT/build/car_assemble_description/CMakeFiles/car_assemble_description_uninstall.dir
+/home/lego/2026_TIRT/build/car_assemble_description/CMakeFiles/test.dir
+/home/lego/2026_TIRT/build/car_assemble_description/CMakeFiles/edit_cache.dir
+/home/lego/2026_TIRT/build/car_assemble_description/CMakeFiles/rebuild_cache.dir
+/home/lego/2026_TIRT/build/car_assemble_description/CMakeFiles/list_install_components.dir
+/home/lego/2026_TIRT/build/car_assemble_description/CMakeFiles/install.dir
+/home/lego/2026_TIRT/build/car_assemble_description/CMakeFiles/install/local.dir
+/home/lego/2026_TIRT/build/car_assemble_description/CMakeFiles/install/strip.dir

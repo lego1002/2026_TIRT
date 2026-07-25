@@ -1,0 +1,400 @@
+[0.058s] DEBUG:colcon:Command line arguments: ['/usr/bin/colcon', 'build']
+[0.058s] DEBUG:colcon:Parsed command line arguments: Namespace(log_base=None, log_level=None, verb_name='build', build_base='build', install_base='install', merge_install=False, symlink_install=False, test_result_base=None, continue_on_error=False, executor='parallel', parallel_workers=16, event_handlers=None, ignore_user_meta=False, metas=['./colcon.meta'], base_paths=['.'], packages_ignore=None, packages_ignore_regex=None, paths=None, packages_up_to=None, packages_up_to_regex=None, packages_above=None, packages_above_and_dependencies=None, packages_above_depth=None, packages_select_by_dep=None, packages_skip_by_dep=None, packages_skip_up_to=None, packages_select_build_failed=False, packages_skip_build_finished=False, packages_select_test_failures=False, packages_skip_test_passed=False, packages_select=None, packages_skip=None, packages_select_regex=None, packages_skip_regex=None, packages_start=None, packages_end=None, allow_overriding=[], cmake_args=None, cmake_target=None, cmake_target_skip_unavailable=False, cmake_clean_cache=False, cmake_clean_first=False, cmake_force_configure=False, ament_cmake_args=None, catkin_cmake_args=None, catkin_skip_building_tests=False, mixin_files=None, mixin=None, verb_parser=<colcon_mixin.mixin.mixin_argument.MixinArgumentDecorator object at 0x70f77825a680>, verb_extension=<colcon_core.verb.build.BuildVerb object at 0x70f77835b640>, main=<bound method BuildVerb.main of <colcon_core.verb.build.BuildVerb object at 0x70f77835b640>>, mixin_verb=('build',))
+[0.141s] Level 1:colcon.colcon_core.package_discovery:discover_packages(colcon_meta) check parameters
+[0.141s] Level 1:colcon.colcon_core.package_discovery:discover_packages(recursive) check parameters
+[0.141s] Level 1:colcon.colcon_core.package_discovery:discover_packages(ignore) check parameters
+[0.141s] Level 1:colcon.colcon_core.package_discovery:discover_packages(path) check parameters
+[0.141s] Level 1:colcon.colcon_core.package_discovery:discover_packages(colcon_meta) discover
+[0.141s] Level 1:colcon.colcon_core.package_discovery:discover_packages(recursive) discover
+[0.141s] INFO:colcon.colcon_core.package_discovery:Crawling recursively for packages in '/home/lego/2026_TIRT'
+[0.141s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['ignore', 'ignore_ament_install']
+[0.141s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'ignore'
+[0.141s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'ignore_ament_install'
+[0.141s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['colcon_pkg']
+[0.141s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'colcon_pkg'
+[0.141s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['colcon_meta']
+[0.141s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'colcon_meta'
+[0.141s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['ros']
+[0.141s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'ros'
+[0.147s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['cmake', 'python']
+[0.147s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'cmake'
+[0.147s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'python'
+[0.147s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['python_setup_py']
+[0.147s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'python_setup_py'
+[0.147s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files) by extensions ['ignore', 'ignore_ament_install']
+[0.147s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files) by extension 'ignore'
+[0.147s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files) by extension 'ignore_ament_install'
+[0.147s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files) by extensions ['colcon_pkg']
+[0.147s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files) by extension 'colcon_pkg'
+[0.147s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files) by extensions ['colcon_meta']
+[0.147s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files) by extension 'colcon_meta'
+[0.147s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files) by extensions ['ros']
+[0.147s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files) by extension 'ros'
+[0.147s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files) by extensions ['cmake', 'python']
+[0.147s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files) by extension 'cmake'
+[0.147s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files) by extension 'python'
+[0.147s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files) by extensions ['python_setup_py']
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files) by extension 'python_setup_py'
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/3DP) by extensions ['ignore', 'ignore_ament_install']
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/3DP) by extension 'ignore'
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/3DP) by extension 'ignore_ament_install'
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/3DP) by extensions ['colcon_pkg']
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/3DP) by extension 'colcon_pkg'
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/3DP) by extensions ['colcon_meta']
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/3DP) by extension 'colcon_meta'
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/3DP) by extensions ['ros']
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/3DP) by extension 'ros'
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/3DP) by extensions ['cmake', 'python']
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/3DP) by extension 'cmake'
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/3DP) by extension 'python'
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/3DP) by extensions ['python_setup_py']
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/3DP) by extension 'python_setup_py'
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/solidworks) by extensions ['ignore', 'ignore_ament_install']
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/solidworks) by extension 'ignore'
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/solidworks) by extension 'ignore_ament_install'
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/solidworks) by extensions ['colcon_pkg']
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/solidworks) by extension 'colcon_pkg'
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/solidworks) by extensions ['colcon_meta']
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/solidworks) by extension 'colcon_meta'
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/solidworks) by extensions ['ros']
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/solidworks) by extension 'ros'
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/solidworks) by extensions ['cmake', 'python']
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/solidworks) by extension 'cmake'
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/solidworks) by extension 'python'
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/solidworks) by extensions ['python_setup_py']
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/solidworks) by extension 'python_setup_py'
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step) by extensions ['ignore', 'ignore_ament_install']
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step) by extension 'ignore'
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step) by extension 'ignore_ament_install'
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step) by extensions ['colcon_pkg']
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step) by extension 'colcon_pkg'
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step) by extensions ['colcon_meta']
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step) by extension 'colcon_meta'
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step) by extensions ['ros']
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step) by extension 'ros'
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step) by extensions ['cmake', 'python']
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step) by extension 'cmake'
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step) by extension 'python'
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step) by extensions ['python_setup_py']
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step) by extension 'python_setup_py'
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072) by extensions ['ignore', 'ignore_ament_install']
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072) by extension 'ignore'
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072) by extension 'ignore_ament_install'
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072) by extensions ['colcon_pkg']
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072) by extension 'colcon_pkg'
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072) by extensions ['colcon_meta']
+[0.148s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072) by extension 'colcon_meta'
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072) by extensions ['ros']
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072) by extension 'ros'
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072) by extensions ['cmake', 'python']
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072) by extension 'cmake'
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072) by extension 'python'
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072) by extensions ['python_setup_py']
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072) by extension 'python_setup_py'
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072/files) by extensions ['ignore', 'ignore_ament_install']
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072/files) by extension 'ignore'
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072/files) by extension 'ignore_ament_install'
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072/files) by extensions ['colcon_pkg']
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072/files) by extension 'colcon_pkg'
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072/files) by extensions ['colcon_meta']
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072/files) by extension 'colcon_meta'
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072/files) by extensions ['ros']
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072/files) by extension 'ros'
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072/files) by extensions ['cmake', 'python']
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072/files) by extension 'cmake'
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072/files) by extension 'python'
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072/files) by extensions ['python_setup_py']
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072/files) by extension 'python_setup_py'
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072/images) by extensions ['ignore', 'ignore_ament_install']
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072/images) by extension 'ignore'
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072/images) by extension 'ignore_ament_install'
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072/images) by extensions ['colcon_pkg']
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072/images) by extension 'colcon_pkg'
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072/images) by extensions ['colcon_meta']
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072/images) by extension 'colcon_meta'
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072/images) by extensions ['ros']
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072/images) by extension 'ros'
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072/images) by extensions ['cmake', 'python']
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072/images) by extension 'cmake'
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072/images) by extension 'python'
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072/images) by extensions ['python_setup_py']
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(CAD_files/step/Lego Technic Beam - 6898072/images) by extension 'python_setup_py'
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master) by extensions ['ignore', 'ignore_ament_install']
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master) by extension 'ignore'
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master) by extension 'ignore_ament_install'
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master) by extensions ['colcon_pkg']
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master) by extension 'colcon_pkg'
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master) by extensions ['colcon_meta']
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master) by extension 'colcon_meta'
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master) by extensions ['ros']
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master) by extension 'ros'
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master) by extensions ['cmake', 'python']
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master) by extension 'cmake'
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master) by extension 'python'
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master) by extensions ['python_setup_py']
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master) by extension 'python_setup_py'
+[0.149s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/communication) by extensions ['ignore', 'ignore_ament_install']
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/communication) by extension 'ignore'
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/communication) by extension 'ignore_ament_install'
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/communication) by extensions ['colcon_pkg']
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/communication) by extension 'colcon_pkg'
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/communication) by extensions ['colcon_meta']
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/communication) by extension 'colcon_meta'
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/communication) by extensions ['ros']
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/communication) by extension 'ros'
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/communication) by extensions ['cmake', 'python']
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/communication) by extension 'cmake'
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/communication) by extension 'python'
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/communication) by extensions ['python_setup_py']
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/communication) by extension 'python_setup_py'
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/example) by extensions ['ignore', 'ignore_ament_install']
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/example) by extension 'ignore'
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/example) by extension 'ignore_ament_install'
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/example) by extensions ['colcon_pkg']
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/example) by extension 'colcon_pkg'
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/example) by extensions ['colcon_meta']
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/example) by extension 'colcon_meta'
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/example) by extensions ['ros']
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/example) by extension 'ros'
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/example) by extensions ['cmake', 'python']
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/example) by extension 'cmake'
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/example) by extension 'python'
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/example) by extensions ['python_setup_py']
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/example) by extension 'python_setup_py'
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/example/__pycache__) by extensions ['ignore', 'ignore_ament_install']
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/example/__pycache__) by extension 'ignore'
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/example/__pycache__) by extension 'ignore_ament_install'
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/example/__pycache__) by extensions ['colcon_pkg']
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/example/__pycache__) by extension 'colcon_pkg'
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/example/__pycache__) by extensions ['colcon_meta']
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/example/__pycache__) by extension 'colcon_meta'
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/example/__pycache__) by extensions ['ros']
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/example/__pycache__) by extension 'ros'
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/example/__pycache__) by extensions ['cmake', 'python']
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/example/__pycache__) by extension 'cmake'
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/example/__pycache__) by extension 'python'
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/example/__pycache__) by extensions ['python_setup_py']
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/example/__pycache__) by extension 'python_setup_py'
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/firmware) by extensions ['ignore', 'ignore_ament_install']
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/firmware) by extension 'ignore'
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/firmware) by extension 'ignore_ament_install'
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/firmware) by extensions ['colcon_pkg']
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/firmware) by extension 'colcon_pkg'
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/firmware) by extensions ['colcon_meta']
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/firmware) by extension 'colcon_meta'
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/firmware) by extensions ['ros']
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/firmware) by extension 'ros'
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/firmware) by extensions ['cmake', 'python']
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/firmware) by extension 'cmake'
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/firmware) by extension 'python'
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/firmware) by extensions ['python_setup_py']
+[0.150s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/firmware) by extension 'python_setup_py'
+[0.151s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/image) by extensions ['ignore', 'ignore_ament_install']
+[0.151s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/image) by extension 'ignore'
+[0.151s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/image) by extension 'ignore_ament_install'
+[0.151s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/image) by extensions ['colcon_pkg']
+[0.151s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/image) by extension 'colcon_pkg'
+[0.151s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/image) by extensions ['colcon_meta']
+[0.151s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/image) by extension 'colcon_meta'
+[0.151s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/image) by extensions ['ros']
+[0.151s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/image) by extension 'ros'
+[0.151s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/image) by extensions ['cmake', 'python']
+[0.151s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/image) by extension 'cmake'
+[0.151s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/image) by extension 'python'
+[0.151s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/image) by extensions ['python_setup_py']
+[0.151s] Level 1:colcon.colcon_core.package_identification:_identify(OminiBotHV-master/image) by extension 'python_setup_py'
+[0.151s] Level 1:colcon.colcon_core.package_identification:_identify(build) by extensions ['ignore', 'ignore_ament_install']
+[0.151s] Level 1:colcon.colcon_core.package_identification:_identify(build) by extension 'ignore'
+[0.151s] Level 1:colcon.colcon_core.package_identification:_identify(build) ignored
+[0.151s] Level 1:colcon.colcon_core.package_identification:_identify(car_assemble_description) by extensions ['ignore', 'ignore_ament_install']
+[0.151s] Level 1:colcon.colcon_core.package_identification:_identify(car_assemble_description) by extension 'ignore'
+[0.151s] Level 1:colcon.colcon_core.package_identification:_identify(car_assemble_description) by extension 'ignore_ament_install'
+[0.151s] Level 1:colcon.colcon_core.package_identification:_identify(car_assemble_description) by extensions ['colcon_pkg']
+[0.151s] Level 1:colcon.colcon_core.package_identification:_identify(car_assemble_description) by extension 'colcon_pkg'
+[0.151s] Level 1:colcon.colcon_core.package_identification:_identify(car_assemble_description) by extensions ['colcon_meta']
+[0.151s] Level 1:colcon.colcon_core.package_identification:_identify(car_assemble_description) by extension 'colcon_meta'
+[0.151s] Level 1:colcon.colcon_core.package_identification:_identify(car_assemble_description) by extensions ['ros']
+[0.151s] Level 1:colcon.colcon_core.package_identification:_identify(car_assemble_description) by extension 'ros'
+[0.152s] DEBUG:colcon.colcon_core.package_identification:Package 'car_assemble_description' with type 'ros.ament_cmake' and name 'car_assemble_description'
+[0.152s] Level 1:colcon.colcon_core.package_identification:_identify(dds) by extensions ['ignore', 'ignore_ament_install']
+[0.152s] Level 1:colcon.colcon_core.package_identification:_identify(dds) by extension 'ignore'
+[0.152s] Level 1:colcon.colcon_core.package_identification:_identify(dds) by extension 'ignore_ament_install'
+[0.152s] Level 1:colcon.colcon_core.package_identification:_identify(dds) by extensions ['colcon_pkg']
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(dds) by extension 'colcon_pkg'
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(dds) by extensions ['colcon_meta']
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(dds) by extension 'colcon_meta'
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(dds) by extensions ['ros']
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(dds) by extension 'ros'
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(dds) by extensions ['cmake', 'python']
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(dds) by extension 'cmake'
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(dds) by extension 'python'
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(dds) by extensions ['python_setup_py']
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(dds) by extension 'python_setup_py'
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(install) by extensions ['ignore', 'ignore_ament_install']
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(install) by extension 'ignore'
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(install) ignored
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(log) by extensions ['ignore', 'ignore_ament_install']
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(log) by extension 'ignore'
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(log) ignored
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(maps) by extensions ['ignore', 'ignore_ament_install']
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(maps) by extension 'ignore'
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(maps) by extension 'ignore_ament_install'
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(maps) by extensions ['colcon_pkg']
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(maps) by extension 'colcon_pkg'
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(maps) by extensions ['colcon_meta']
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(maps) by extension 'colcon_meta'
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(maps) by extensions ['ros']
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(maps) by extension 'ros'
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(maps) by extensions ['cmake', 'python']
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(maps) by extension 'cmake'
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(maps) by extension 'python'
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(maps) by extensions ['python_setup_py']
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(maps) by extension 'python_setup_py'
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(ominibot_driver) by extensions ['ignore', 'ignore_ament_install']
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(ominibot_driver) by extension 'ignore'
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(ominibot_driver) by extension 'ignore_ament_install'
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(ominibot_driver) by extensions ['colcon_pkg']
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(ominibot_driver) by extension 'colcon_pkg'
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(ominibot_driver) by extensions ['colcon_meta']
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(ominibot_driver) by extension 'colcon_meta'
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(ominibot_driver) by extensions ['ros']
+[0.153s] Level 1:colcon.colcon_core.package_identification:_identify(ominibot_driver) by extension 'ros'
+[0.154s] DEBUG:colcon.colcon_core.package_identification:Package 'ominibot_driver' with type 'ros.ament_python' and name 'ominibot_driver'
+[0.154s] Level 1:colcon.colcon_core.package_identification:_identify(udev) by extensions ['ignore', 'ignore_ament_install']
+[0.154s] Level 1:colcon.colcon_core.package_identification:_identify(udev) by extension 'ignore'
+[0.154s] Level 1:colcon.colcon_core.package_identification:_identify(udev) by extension 'ignore_ament_install'
+[0.154s] Level 1:colcon.colcon_core.package_identification:_identify(udev) by extensions ['colcon_pkg']
+[0.154s] Level 1:colcon.colcon_core.package_identification:_identify(udev) by extension 'colcon_pkg'
+[0.154s] Level 1:colcon.colcon_core.package_identification:_identify(udev) by extensions ['colcon_meta']
+[0.154s] Level 1:colcon.colcon_core.package_identification:_identify(udev) by extension 'colcon_meta'
+[0.154s] Level 1:colcon.colcon_core.package_identification:_identify(udev) by extensions ['ros']
+[0.154s] Level 1:colcon.colcon_core.package_identification:_identify(udev) by extension 'ros'
+[0.154s] Level 1:colcon.colcon_core.package_identification:_identify(udev) by extensions ['cmake', 'python']
+[0.154s] Level 1:colcon.colcon_core.package_identification:_identify(udev) by extension 'cmake'
+[0.154s] Level 1:colcon.colcon_core.package_identification:_identify(udev) by extension 'python'
+[0.154s] Level 1:colcon.colcon_core.package_identification:_identify(udev) by extensions ['python_setup_py']
+[0.154s] Level 1:colcon.colcon_core.package_identification:_identify(udev) by extension 'python_setup_py'
+[0.154s] Level 1:colcon.colcon_core.package_discovery:discover_packages(recursive) using defaults
+[0.154s] Level 1:colcon.colcon_core.package_discovery:discover_packages(ignore) discover
+[0.154s] Level 1:colcon.colcon_core.package_discovery:discover_packages(ignore) using defaults
+[0.154s] Level 1:colcon.colcon_core.package_discovery:discover_packages(path) discover
+[0.154s] Level 1:colcon.colcon_core.package_discovery:discover_packages(path) using defaults
+[0.173s] Level 1:colcon.colcon_core.package_discovery:discover_packages(prefix_path) check parameters
+[0.173s] Level 1:colcon.colcon_core.package_discovery:discover_packages(prefix_path) discover
+[0.174s] DEBUG:colcon.colcon_installed_package_information.package_discovery:Found 1 installed packages in /home/lego/2026_TIRT/install
+[0.174s] DEBUG:colcon.colcon_installed_package_information.package_discovery:Found 3 installed packages in /home/lego/ros2_ws/install
+[0.175s] DEBUG:colcon.colcon_installed_package_information.package_discovery:Found 281 installed packages in /opt/ros/humble
+[0.176s] Level 1:colcon.colcon_core.package_discovery:discover_packages(prefix_path) using defaults
+[0.197s] Level 5:colcon.colcon_core.verb:set package 'ominibot_driver' build argument 'cmake_args' from command line to 'None'
+[0.197s] Level 5:colcon.colcon_core.verb:set package 'ominibot_driver' build argument 'cmake_target' from command line to 'None'
+[0.197s] Level 5:colcon.colcon_core.verb:set package 'ominibot_driver' build argument 'cmake_target_skip_unavailable' from command line to 'False'
+[0.197s] Level 5:colcon.colcon_core.verb:set package 'ominibot_driver' build argument 'cmake_clean_cache' from command line to 'False'
+[0.197s] Level 5:colcon.colcon_core.verb:set package 'ominibot_driver' build argument 'cmake_clean_first' from command line to 'False'
+[0.197s] Level 5:colcon.colcon_core.verb:set package 'ominibot_driver' build argument 'cmake_force_configure' from command line to 'False'
+[0.197s] Level 5:colcon.colcon_core.verb:set package 'ominibot_driver' build argument 'ament_cmake_args' from command line to 'None'
+[0.197s] Level 5:colcon.colcon_core.verb:set package 'ominibot_driver' build argument 'catkin_cmake_args' from command line to 'None'
+[0.197s] Level 5:colcon.colcon_core.verb:set package 'ominibot_driver' build argument 'catkin_skip_building_tests' from command line to 'False'
+[0.197s] DEBUG:colcon.colcon_core.verb:Building package 'ominibot_driver' with the following arguments: {'ament_cmake_args': None, 'build_base': '/home/lego/2026_TIRT/build/ominibot_driver', 'catkin_cmake_args': None, 'catkin_skip_building_tests': False, 'cmake_args': None, 'cmake_clean_cache': False, 'cmake_clean_first': False, 'cmake_force_configure': False, 'cmake_target': None, 'cmake_target_skip_unavailable': False, 'install_base': '/home/lego/2026_TIRT/install/ominibot_driver', 'merge_install': False, 'path': '/home/lego/2026_TIRT/ominibot_driver', 'symlink_install': False, 'test_result_base': None}
+[0.197s] Level 5:colcon.colcon_core.verb:set package 'car_assemble_description' build argument 'cmake_args' from command line to 'None'
+[0.197s] Level 5:colcon.colcon_core.verb:set package 'car_assemble_description' build argument 'cmake_target' from command line to 'None'
+[0.197s] Level 5:colcon.colcon_core.verb:set package 'car_assemble_description' build argument 'cmake_target_skip_unavailable' from command line to 'False'
+[0.197s] Level 5:colcon.colcon_core.verb:set package 'car_assemble_description' build argument 'cmake_clean_cache' from command line to 'False'
+[0.197s] Level 5:colcon.colcon_core.verb:set package 'car_assemble_description' build argument 'cmake_clean_first' from command line to 'False'
+[0.198s] Level 5:colcon.colcon_core.verb:set package 'car_assemble_description' build argument 'cmake_force_configure' from command line to 'False'
+[0.198s] Level 5:colcon.colcon_core.verb:set package 'car_assemble_description' build argument 'ament_cmake_args' from command line to 'None'
+[0.198s] Level 5:colcon.colcon_core.verb:set package 'car_assemble_description' build argument 'catkin_cmake_args' from command line to 'None'
+[0.198s] Level 5:colcon.colcon_core.verb:set package 'car_assemble_description' build argument 'catkin_skip_building_tests' from command line to 'False'
+[0.198s] DEBUG:colcon.colcon_core.verb:Building package 'car_assemble_description' with the following arguments: {'ament_cmake_args': None, 'build_base': '/home/lego/2026_TIRT/build/car_assemble_description', 'catkin_cmake_args': None, 'catkin_skip_building_tests': False, 'cmake_args': None, 'cmake_clean_cache': False, 'cmake_clean_first': False, 'cmake_force_configure': False, 'cmake_target': None, 'cmake_target_skip_unavailable': False, 'install_base': '/home/lego/2026_TIRT/install/car_assemble_description', 'merge_install': False, 'path': '/home/lego/2026_TIRT/car_assemble_description', 'symlink_install': False, 'test_result_base': None}
+[0.198s] INFO:colcon.colcon_core.executor:Executing jobs using 'parallel' executor
+[0.198s] DEBUG:colcon.colcon_parallel_executor.executor.parallel:run_until_complete
+[0.199s] INFO:colcon.colcon_ros.task.ament_python.build:Building ROS package in '/home/lego/2026_TIRT/ominibot_driver' with build type 'ament_python'
+[0.199s] Level 1:colcon.colcon_core.shell:create_environment_hook('ominibot_driver', 'ament_prefix_path')
+[0.200s] INFO:colcon.colcon_core.plugin_system:Skipping extension 'colcon_core.shell.bat': Not used on non-Windows systems
+[0.200s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/lego/2026_TIRT/install/ominibot_driver/share/ominibot_driver/hook/ament_prefix_path.ps1'
+[0.201s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/lego/2026_TIRT/install/ominibot_driver/share/ominibot_driver/hook/ament_prefix_path.dsv'
+[0.201s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/lego/2026_TIRT/install/ominibot_driver/share/ominibot_driver/hook/ament_prefix_path.sh'
+[0.201s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[0.201s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[0.351s] INFO:colcon.colcon_core.task.python.build:Building Python package in '/home/lego/2026_TIRT/ominibot_driver'
+[0.352s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[0.352s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[0.560s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoking command in '/home/lego/2026_TIRT/ominibot_driver': PYTHONPATH=/home/lego/2026_TIRT/build/ominibot_driver/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/lego/2026_TIRT/install/ominibot_driver/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../build/ominibot_driver build --build-base /home/lego/2026_TIRT/build/ominibot_driver/build install --record /home/lego/2026_TIRT/build/ominibot_driver/install.log --single-version-externally-managed install_data
+[0.714s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoked command in '/home/lego/2026_TIRT/ominibot_driver' returned '0': PYTHONPATH=/home/lego/2026_TIRT/build/ominibot_driver/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/lego/2026_TIRT/install/ominibot_driver/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../build/ominibot_driver build --build-base /home/lego/2026_TIRT/build/ominibot_driver/build install --record /home/lego/2026_TIRT/build/ominibot_driver/install.log --single-version-externally-managed install_data
+[0.715s] Level 1:colcon.colcon_core.environment:checking '/home/lego/2026_TIRT/install/ominibot_driver' for CMake module files
+[0.715s] Level 1:colcon.colcon_core.environment:checking '/home/lego/2026_TIRT/install/ominibot_driver' for CMake config files
+[0.716s] Level 1:colcon.colcon_core.environment:checking '/home/lego/2026_TIRT/install/ominibot_driver/lib'
+[0.717s] Level 1:colcon.colcon_core.environment:checking '/home/lego/2026_TIRT/install/ominibot_driver/bin'
+[0.717s] Level 1:colcon.colcon_core.environment:checking '/home/lego/2026_TIRT/install/ominibot_driver/lib/pkgconfig/ominibot_driver.pc'
+[0.717s] Level 1:colcon.colcon_core.environment:checking '/home/lego/2026_TIRT/install/ominibot_driver/lib/python3.10/site-packages'
+[0.717s] Level 1:colcon.colcon_core.shell:create_environment_hook('ominibot_driver', 'pythonpath')
+[0.718s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/lego/2026_TIRT/install/ominibot_driver/share/ominibot_driver/hook/pythonpath.ps1'
+[0.718s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/lego/2026_TIRT/install/ominibot_driver/share/ominibot_driver/hook/pythonpath.dsv'
+[0.719s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/lego/2026_TIRT/install/ominibot_driver/share/ominibot_driver/hook/pythonpath.sh'
+[0.720s] Level 1:colcon.colcon_core.environment:checking '/home/lego/2026_TIRT/install/ominibot_driver/bin'
+[0.720s] Level 1:colcon.colcon_core.environment:create_environment_scripts_only(ominibot_driver)
+[0.720s] INFO:colcon.colcon_core.shell:Creating package script '/home/lego/2026_TIRT/install/ominibot_driver/share/ominibot_driver/package.ps1'
+[0.721s] INFO:colcon.colcon_core.shell:Creating package descriptor '/home/lego/2026_TIRT/install/ominibot_driver/share/ominibot_driver/package.dsv'
+[0.722s] INFO:colcon.colcon_core.shell:Creating package script '/home/lego/2026_TIRT/install/ominibot_driver/share/ominibot_driver/package.sh'
+[0.723s] INFO:colcon.colcon_core.shell:Creating package script '/home/lego/2026_TIRT/install/ominibot_driver/share/ominibot_driver/package.bash'
+[0.724s] INFO:colcon.colcon_core.shell:Creating package script '/home/lego/2026_TIRT/install/ominibot_driver/share/ominibot_driver/package.zsh'
+[0.725s] Level 1:colcon.colcon_core.environment:create_file_with_runtime_dependencies(/home/lego/2026_TIRT/install/ominibot_driver/share/colcon-core/packages/ominibot_driver)
+[0.726s] INFO:colcon.colcon_ros.task.ament_cmake.build:Building ROS package in '/home/lego/2026_TIRT/car_assemble_description' with build type 'ament_cmake'
+[0.726s] INFO:colcon.colcon_cmake.task.cmake.build:Building CMake package in '/home/lego/2026_TIRT/car_assemble_description'
+[0.726s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[0.726s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[0.742s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoking command in '/home/lego/2026_TIRT/build/car_assemble_description': AMENT_PREFIX_PATH=/home/lego/2026_TIRT/install/ominibot_driver:${AMENT_PREFIX_PATH} CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/lego/ros2_ws/install/ominibot_driver:/opt/ros/humble PYTHONPATH=/home/lego/2026_TIRT/install/ominibot_driver/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/cmake --build /home/lego/2026_TIRT/build/car_assemble_description -- -j16 -l16
+[0.772s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoked command in '/home/lego/2026_TIRT/build/car_assemble_description' returned '0': AMENT_PREFIX_PATH=/home/lego/2026_TIRT/install/ominibot_driver:${AMENT_PREFIX_PATH} CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/lego/ros2_ws/install/ominibot_driver:/opt/ros/humble PYTHONPATH=/home/lego/2026_TIRT/install/ominibot_driver/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/cmake --build /home/lego/2026_TIRT/build/car_assemble_description -- -j16 -l16
+[0.780s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoking command in '/home/lego/2026_TIRT/build/car_assemble_description': AMENT_PREFIX_PATH=/home/lego/2026_TIRT/install/ominibot_driver:${AMENT_PREFIX_PATH} CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/lego/ros2_ws/install/ominibot_driver:/opt/ros/humble PYTHONPATH=/home/lego/2026_TIRT/install/ominibot_driver/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/cmake --install /home/lego/2026_TIRT/build/car_assemble_description
+[0.787s] Level 1:colcon.colcon_core.environment:create_environment_scripts_only(car_assemble_description)
+[0.787s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoked command in '/home/lego/2026_TIRT/build/car_assemble_description' returned '0': AMENT_PREFIX_PATH=/home/lego/2026_TIRT/install/ominibot_driver:${AMENT_PREFIX_PATH} CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/lego/ros2_ws/install/ominibot_driver:/opt/ros/humble PYTHONPATH=/home/lego/2026_TIRT/install/ominibot_driver/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/cmake --install /home/lego/2026_TIRT/build/car_assemble_description
+[0.787s] Level 1:colcon.colcon_core.environment:checking '/home/lego/2026_TIRT/install/car_assemble_description' for CMake module files
+[0.788s] Level 1:colcon.colcon_core.environment:checking '/home/lego/2026_TIRT/install/car_assemble_description' for CMake config files
+[0.788s] Level 1:colcon.colcon_core.shell:create_environment_hook('car_assemble_description', 'cmake_prefix_path')
+[0.789s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/lego/2026_TIRT/install/car_assemble_description/share/car_assemble_description/hook/cmake_prefix_path.ps1'
+[0.789s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/lego/2026_TIRT/install/car_assemble_description/share/car_assemble_description/hook/cmake_prefix_path.dsv'
+[0.790s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/lego/2026_TIRT/install/car_assemble_description/share/car_assemble_description/hook/cmake_prefix_path.sh'
+[0.791s] Level 1:colcon.colcon_core.environment:checking '/home/lego/2026_TIRT/install/car_assemble_description/bin'
+[0.791s] Level 1:colcon.colcon_core.environment:checking '/home/lego/2026_TIRT/install/car_assemble_description/lib/pkgconfig/car_assemble_description.pc'
+[0.791s] Level 1:colcon.colcon_core.environment:checking '/home/lego/2026_TIRT/install/car_assemble_description/lib/python3.10/site-packages'
+[0.792s] Level 1:colcon.colcon_core.environment:checking '/home/lego/2026_TIRT/install/car_assemble_description/bin'
+[0.792s] INFO:colcon.colcon_core.shell:Creating package script '/home/lego/2026_TIRT/install/car_assemble_description/share/car_assemble_description/package.ps1'
+[0.792s] INFO:colcon.colcon_core.shell:Creating package descriptor '/home/lego/2026_TIRT/install/car_assemble_description/share/car_assemble_description/package.dsv'
+[0.793s] INFO:colcon.colcon_core.shell:Creating package script '/home/lego/2026_TIRT/install/car_assemble_description/share/car_assemble_description/package.sh'
+[0.793s] INFO:colcon.colcon_core.shell:Creating package script '/home/lego/2026_TIRT/install/car_assemble_description/share/car_assemble_description/package.bash'
+[0.794s] INFO:colcon.colcon_core.shell:Creating package script '/home/lego/2026_TIRT/install/car_assemble_description/share/car_assemble_description/package.zsh'
+[0.794s] Level 1:colcon.colcon_core.environment:create_file_with_runtime_dependencies(/home/lego/2026_TIRT/install/car_assemble_description/share/colcon-core/packages/car_assemble_description)
+[0.795s] Level 1:colcon.colcon_core.environment:create_environment_scripts_only(car_assemble_description)
+[0.795s] Level 1:colcon.colcon_core.environment:checking '/home/lego/2026_TIRT/install/car_assemble_description' for CMake module files
+[0.796s] Level 1:colcon.colcon_core.environment:checking '/home/lego/2026_TIRT/install/car_assemble_description' for CMake config files
+[0.797s] Level 1:colcon.colcon_core.shell:create_environment_hook('car_assemble_description', 'cmake_prefix_path')
+[0.797s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/lego/2026_TIRT/install/car_assemble_description/share/car_assemble_description/hook/cmake_prefix_path.ps1'
+[0.798s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/lego/2026_TIRT/install/car_assemble_description/share/car_assemble_description/hook/cmake_prefix_path.dsv'
+[0.798s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/lego/2026_TIRT/install/car_assemble_description/share/car_assemble_description/hook/cmake_prefix_path.sh'
+[0.799s] Level 1:colcon.colcon_core.environment:checking '/home/lego/2026_TIRT/install/car_assemble_description/bin'
+[0.799s] Level 1:colcon.colcon_core.environment:checking '/home/lego/2026_TIRT/install/car_assemble_description/lib/pkgconfig/car_assemble_description.pc'
+[0.799s] Level 1:colcon.colcon_core.environment:checking '/home/lego/2026_TIRT/install/car_assemble_description/lib/python3.10/site-packages'
+[0.800s] Level 1:colcon.colcon_core.environment:checking '/home/lego/2026_TIRT/install/car_assemble_description/bin'
+[0.800s] INFO:colcon.colcon_core.shell:Creating package script '/home/lego/2026_TIRT/install/car_assemble_description/share/car_assemble_description/package.ps1'
+[0.801s] INFO:colcon.colcon_core.shell:Creating package descriptor '/home/lego/2026_TIRT/install/car_assemble_description/share/car_assemble_description/package.dsv'
+[0.802s] INFO:colcon.colcon_core.shell:Creating package script '/home/lego/2026_TIRT/install/car_assemble_description/share/car_assemble_description/package.sh'
+[0.802s] INFO:colcon.colcon_core.shell:Creating package script '/home/lego/2026_TIRT/install/car_assemble_description/share/car_assemble_description/package.bash'
+[0.803s] INFO:colcon.colcon_core.shell:Creating package script '/home/lego/2026_TIRT/install/car_assemble_description/share/car_assemble_description/package.zsh'
+[0.803s] Level 1:colcon.colcon_core.environment:create_file_with_runtime_dependencies(/home/lego/2026_TIRT/install/car_assemble_description/share/colcon-core/packages/car_assemble_description)
+[0.804s] DEBUG:colcon.colcon_parallel_executor.executor.parallel:closing loop
+[0.804s] DEBUG:colcon.colcon_parallel_executor.executor.parallel:loop closed
+[0.804s] DEBUG:colcon.colcon_parallel_executor.executor.parallel:run_until_complete finished with '0'
+[0.804s] DEBUG:colcon.colcon_core.event_reactor:joining thread
+[0.811s] INFO:colcon.colcon_core.plugin_system:Skipping extension 'colcon_notification.desktop_notification.terminal_notifier': Not used on non-Darwin systems
+[0.811s] INFO:colcon.colcon_core.plugin_system:Skipping extension 'colcon_notification.desktop_notification.win32': Not used on non-Windows systems
+[0.811s] INFO:colcon.colcon_notification.desktop_notification:Sending desktop notification using 'notify2'
+[0.821s] DEBUG:colcon.colcon_core.event_reactor:joined thread
+[0.822s] INFO:colcon.colcon_core.shell:Creating prefix script '/home/lego/2026_TIRT/install/local_setup.ps1'
+[0.823s] INFO:colcon.colcon_core.shell:Creating prefix util module '/home/lego/2026_TIRT/install/_local_setup_util_ps1.py'
+[0.825s] INFO:colcon.colcon_core.shell:Creating prefix chain script '/home/lego/2026_TIRT/install/setup.ps1'
+[0.826s] INFO:colcon.colcon_core.shell:Creating prefix script '/home/lego/2026_TIRT/install/local_setup.sh'
+[0.827s] INFO:colcon.colcon_core.shell:Creating prefix util module '/home/lego/2026_TIRT/install/_local_setup_util_sh.py'
+[0.828s] INFO:colcon.colcon_core.shell:Creating prefix chain script '/home/lego/2026_TIRT/install/setup.sh'
+[0.831s] INFO:colcon.colcon_core.shell:Creating prefix script '/home/lego/2026_TIRT/install/local_setup.bash'
+[0.831s] INFO:colcon.colcon_core.shell:Creating prefix chain script '/home/lego/2026_TIRT/install/setup.bash'
+[0.833s] INFO:colcon.colcon_core.shell:Creating prefix script '/home/lego/2026_TIRT/install/local_setup.zsh'
+[0.833s] INFO:colcon.colcon_core.shell:Creating prefix chain script '/home/lego/2026_TIRT/install/setup.zsh'
