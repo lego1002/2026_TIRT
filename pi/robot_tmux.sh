@@ -88,12 +88,23 @@ win_exists() { tmux list-windows -t "$S" -F '#W' 2>/dev/null | grep -qx "$1"; }
 
 # 視窗裡是不是真的有東西在跑(而不是 Ctrl-C 之後只剩一個 bash prompt,或整個 pane 已死)
 win_busy() {
-    local info dead c
-    info="$(tmux list-panes -t "$S:$1" -F '#{pane_dead} #{pane_current_command}' 2>/dev/null | head -1)"
+    local info dead pid c
+    info="$(tmux list-panes -t "$S:$1" -F '#{pane_dead} #{pane_pid} #{pane_current_command}' 2>/dev/null | head -1)"
     [ -n "$info" ] || return 1
-    dead="${info%% *}"; c="${info#* }"
+    read -r dead pid c <<< "$info"
     [ "$dead" = "1" ] && return 1          # remain-on-exit 留下的屍體不算在跑
-    [ -n "$c" ] && [ "$c" != "bash" ] && [ "$c" != "sh" ]
+
+    # tmux 的 pane_current_command 是 tty 前景 process group 的 leader。
+    # 這對大多數情況夠用,但 `fastdds` 是個包裝腳本(bash → python3),leader 仍然是
+    # bash,tmux 就回報 "bash" —— 2026-07-27 實測:discovery server 明明在跑
+    # (pid 31649 python3 .../fastdds.py),status 卻說 dds 閒置,於是每次 up 都
+    # 對著一個正在跑的 pane 重送一次指令。所以判不出來時再退一步看這個視窗的
+    # shell 有沒有子行程:有子行程就是有東西在跑,不管中間包了幾層。
+    case "$c" in
+        bash|sh|"") ;;
+        *) return 0 ;;
+    esac
+    pgrep -P "$pid" >/dev/null 2>&1
 }
 
 # pane 死掉後 send-keys 沒有用(沒有 shell 在收),必須先 respawn。
@@ -157,8 +168,15 @@ cmd_up() {
     for w in "${list[@]}"; do
         start_win "$w"
         # discovery server 要先站穩,後面的節點才找得到它。
-        [ "$w" = dds ] && sleep 1.5
+        # ※ 這裡用 if 而不是 `[ ... ] && sleep`:後者在 w 不是 dds 時整個判斷式回傳 1,
+        #   而它是迴圈的最後一個指令 → cmd_up 回傳 1 → robot_tmux.sh 以 1 結束 →
+        #   ssh 回傳 1 → robotctl up 回傳 1 → gcs.sh 的 `|| exit 1` 當場結束。
+        #   實際症狀:Pi 端四個視窗都正常起來了,筆電卻「跑完什麼都沒發生」,
+        #   tmux session 沒建、SLAM 沒跑、RViz 不出現,而且完全沒有錯誤訊息。
+        #   (2026-07-27 追了三輪才找到,別把它改回 && 的寫法。)
+        if [ "$w" = dds ]; then sleep 1.5; fi
     done
+    return 0
 }
 
 cmd_down() {
@@ -174,6 +192,7 @@ cmd_down() {
     fi
     local w
     for w in "$@"; do stop_win "$w"; done
+    return 0
 }
 
 cmd_restart() {
@@ -194,6 +213,7 @@ cmd_restart() {
             start_win "$w"
         fi
     done
+    return 0
 }
 
 cmd_status() {
