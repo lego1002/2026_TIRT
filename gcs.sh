@@ -44,10 +44,21 @@ done
 
 command -v tmux >/dev/null || { echo "筆電上沒裝 tmux:sudo apt install tmux" >&2; exit 1; }
 
+# 從 tmux 裡面再 attach 一個 session 會被拒絕("sessions should be nested with care"),
+# 而且因為是 exec,腳本會當場消失、看起來像什麼都沒發生。裡面要用 switch-client。
+enter_session() {
+    if [ -n "${TMUX:-}" ]; then
+        tmux switch-client -t "$SESSION"
+    else
+        exec tmux attach -t "$SESSION"
+    fi
+}
+
 # 已經開著就直接回去,不要重開一份。
 if tmux has-session -t "$SESSION" 2>/dev/null; then
     echo "gcs: session 已存在,直接進入(要重來請先 ./gcs.sh --down)"
-    exec tmux attach -t "$SESSION"
+    enter_session
+    exit 0
 fi
 
 # --- 0. 前置檢查:PC 端套件有沒有 build 到最新 -----------------------------
@@ -109,8 +120,17 @@ new_win() {  # new_win <名稱> [要送出的指令]
 }
 
 tmux new-session -d -s "$SESSION" -n placeholder -c "$_here" "bash --rcfile '$RC' -i"
+if ! tmux has-session -t "$SESSION" 2>/dev/null; then
+    echo "gcs: 建立 tmux session 失敗。手動試一次看錯誤:" >&2
+    echo "     bash --rcfile $RC -i" >&2
+    exit 1
+fi
 tmux set-option -t "$SESSION" -g history-limit 20000 >/dev/null
 tmux set-option -t "$SESSION" mouse on >/dev/null
+# 視窗裡的程式(或 shell 本身)掛掉時保留視窗與畫面,而不是讓它連同錯誤訊息一起消失。
+# 沒有這行的話,唯一的視窗一死整個 session 就跟著不見,現象是「跑完什麼都沒有」,
+# 完全無從查起。死掉的 pane 會標成 [dead],用 restart 重生即可。
+tmux set-option -t "$SESSION" remain-on-exit on >/dev/null
 
 # slam 視窗會連 RViz 一起帶出來(slam_pc.launch.py 的 use_rviz 預設 true),
 # 所以這裡不要再另外開一個 rviz2,否則會有兩個視窗搶同一份設定。
@@ -147,4 +167,4 @@ cat <<EOF
 
 EOF
 sleep 2
-exec tmux attach -t "$SESSION"
+enter_session

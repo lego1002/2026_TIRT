@@ -78,16 +78,27 @@ ensure_session() {
     tmux set-option -t "$S" prefix C-a >/dev/null
     tmux set-option -t "$S" -g history-limit 20000 >/dev/null
     tmux set-option -t "$S" mouse on >/dev/null
+    # 程式(或視窗的 shell)掛掉時保留視窗和畫面上的錯誤訊息,而不是讓它整個消失。
+    # 這是排查的前提:沒有它,discovery server 死掉只會看到視窗不見,錯誤訊息一起帶走。
+    tmux set-option -t "$S" remain-on-exit on >/dev/null
     echo "robot_tmux: 已建立 session '$S'(prefix = Ctrl-a)"
 }
 
 win_exists() { tmux list-windows -t "$S" -F '#W' 2>/dev/null | grep -qx "$1"; }
 
-# 視窗裡是不是真的有東西在跑(而不是 Ctrl-C 之後只剩一個 bash prompt)
+# 視窗裡是不是真的有東西在跑(而不是 Ctrl-C 之後只剩一個 bash prompt,或整個 pane 已死)
 win_busy() {
-    local c
-    c="$(tmux list-panes -t "$S:$1" -F '#{pane_current_command}' 2>/dev/null | head -1)"
+    local info dead c
+    info="$(tmux list-panes -t "$S:$1" -F '#{pane_dead} #{pane_current_command}' 2>/dev/null | head -1)"
+    [ -n "$info" ] || return 1
+    dead="${info%% *}"; c="${info#* }"
+    [ "$dead" = "1" ] && return 1          # remain-on-exit 留下的屍體不算在跑
     [ -n "$c" ] && [ "$c" != "bash" ] && [ "$c" != "sh" ]
+}
+
+# pane 死掉後 send-keys 沒有用(沒有 shell 在收),必須先 respawn。
+win_dead() {
+    [ "$(tmux list-panes -t "$S:$1" -F '#{pane_dead}' 2>/dev/null | head -1)" = "1" ]
 }
 
 start_win() {
@@ -99,8 +110,17 @@ start_win() {
             echo "robot_tmux: [$w] 已在執行,略過(要重跑用 restart $w)"
             return 0
         fi
-        # 視窗還在但程式已停 —— 重新把指令打進去,不砍視窗(保留捲動歷史)
-        echo "robot_tmux: [$w] 視窗閒置,重新啟動"
+        if win_dead "$w"; then
+            # pane 已死(remain-on-exit 把屍體留著給你看錯誤),裡面沒有 shell 收得到
+            # send-keys,必須先重生一個。
+            echo "robot_tmux: [$w] 上次異常結束(畫面已保留),重新開一個 shell"
+            write_rc
+            tmux respawn-window -k -t "$S:$w" -c "$REPO" "bash --rcfile '$RC' -i"
+            sleep 0.3
+        else
+            # 視窗還在、shell 也在,只是程式停了 —— 重新把指令打進去,保留捲動歷史
+            echo "robot_tmux: [$w] 視窗閒置,重新啟動"
+        fi
     else
         write_rc
         tmux new-window -d -t "$S" -n "$w" -c "$REPO" "bash --rcfile '$RC' -i"
