@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+# 從「筆電」遠端控制樹莓派上的機器人程式 —— 不用 ssh 進去、不用切終端。
+#
+#   ./robotctl up [視窗...]       啟動(預設 dds bringup teleop shell);已在跑的不動
+#   ./robotctl restart bringup    只重跑某一段(dds 不動,PC 端不必重連)
+#   ./robotctl down [視窗...]     關閉;不給視窗名就整個關掉並清乾淨殘留行程
+#   ./robotctl attach             進 Pi 的 tmux 看即時輸出(prefix = Ctrl-a,離開按 Ctrl-a d)
+#   ./robotctl status             各視窗死活 + 網路 + 兩邊看不看得到對方的 topic
+#   ./robotctl log [視窗] [行數]  不 attach 也能看某段最近的輸出(預設 bringup 200 行)
+#   ./robotctl args ["參數..."]   查看 / 設定 bringup 的 launch 參數,例:
+#                                   ./robotctl args "use_fake_odom:=true"
+#                                   ./robotctl args ""      # 清空
+#                                 設定後要 ./robotctl restart bringup 才生效
+#   ./robotctl shell              真的需要一個 Pi shell 時才用
+#
+# 連線目標是固定別名 IP(net/tirt_net.conf 的 TIRT_PI_IP),換場地不會變,
+# 所以這支腳本永遠不需要「先查 Pi 的 IP」。
+#
+# 前置:筆電要能免密碼 ssh 到 Pi。沒設過的話跑一次:
+#     ssh-keygen -t ed25519          # 已經有金鑰就跳過
+#     ssh-copy-id lego@10.77.0.2
+set -uo pipefail
+
+_here="$( cd "$( dirname "${BASH_SOURCE[0]:-$0}" )" && pwd )"
+source "$_here/net/tirt_net.conf"
+
+PI="${TIRT_SSH_USER}@${TIRT_PI_IP}"
+RTMUX="${TIRT_PI_REPO}/pi/robot_tmux.sh"
+SSH_OPTS=(-o ConnectTimeout=5 -o BatchMode=yes)
+
+die() { echo "robotctl: $*" >&2; exit 1; }
+
+check_link() {
+    if ! ping -c1 -W2 "$TIRT_PI_IP" >/dev/null 2>&1; then
+        cat >&2 <<EOF
+robotctl: ping 不到 Pi 的固定別名 $TIRT_PI_IP。
+
+  1. Pi 開機了嗎?和筆電連到同一個 WiFi 嗎?
+  2. 筆電這邊有沒有掛上 $TIRT_PC_IP?     ip -4 addr | grep $TIRT_PC_IP
+     沒有的話:sudo ./net/install_pc_alias.sh
+  3. Pi 那邊有沒有掛上 $TIRT_PI_IP?
+     沒有的話(要先能用其他方式連進去):sudo ./net/install_pi_network.sh
+  4. 都有卻還是不通 → AP 可能開了 client isolation,換自己的熱點(見 networkplan.md)。
+EOF
+        exit 1
+    fi
+    if ! ssh "${SSH_OPTS[@]}" "$PI" true 2>/dev/null; then
+        die "ping 得到但 ssh 不進去。設定免密碼登入:ssh-copy-id $PI"
+    fi
+}
+
+remote() { ssh "${SSH_OPTS[@]}" "$PI" "$@"; }
+remote_tty() { ssh -t -o ConnectTimeout=5 "$PI" "$@"; }
+
+cmd="${1:-}"
+# 用法直接取自檔頭註解(從第 3 行起,遇到第一行非註解就停),不必兩處維護。
+usage() { awk 'NR>2 { if (/^#/) { sub(/^# ?/, ""); print } else { exit } }' "$0"; }
+[ -n "$cmd" ] || { usage; exit 1; }
+shift || true
+
+case "$cmd" in
+    up|down|restart|status|log)
+        check_link
+        remote "$RTMUX" "$cmd" "$@"
+        rc=$?
+        # status 額外做「PC 這邊真的收得到嗎」的檢查 —— Pi 說節點活著,不代表
+        # DDS 有接通;這兩件事分開看才查得出問題出在哪一層。
+        if [ "$cmd" = status ]; then
+            echo
+            echo "--- 從筆電這一側看 ---"
+            echo -n "筆電別名 $TIRT_PC_IP: "
+            ip -4 -o addr show scope global 2>/dev/null | grep -q " ${TIRT_PC_IP}/" \
+                && echo "有" || echo "沒有 (!) → sudo ./net/install_pc_alias.sh"
+            if [ -n "${FASTRTPS_DEFAULT_PROFILES_FILE:-}" ]; then
+                echo "DDS profile: $FASTRTPS_DEFAULT_PROFILES_FILE"
+                if command -v ros2 >/dev/null 2>&1; then
+                    echo -n "看得到的 topic: "
+                    timeout 8 ros2 topic list 2>/dev/null | tr '\n' ' ' | sed 's/$/\n/' \
+                        || echo "(逾時 —— DDS 沒接上)"
+                fi
+            else
+                echo "DDS profile: 未設定 → 先 source dds/setup_dds.sh(或改用 ./gcs.sh)"
+            fi
+        fi
+        exit $rc
+        ;;
+
+    attach)
+        check_link
+        echo "robotctl: 進入 Pi 的 tmux(prefix = Ctrl-a;離開請按 Ctrl-a 再按 d,不要 Ctrl-c)"
+        exec ssh -t -o ConnectTimeout=5 "$PI" "$RTMUX" attach
+        ;;
+
+    shell)
+        check_link
+        exec ssh -t -o ConnectTimeout=5 "$PI"
+        ;;
+
+    args)
+        check_link
+        if [ $# -eq 0 ]; then
+            echo -n "目前 bringup 參數: "
+            remote "cat ~/.tirt_robot_args 2>/dev/null || echo '(空,用 launch 預設)'"
+        else
+            printf '%s' "$*" | remote "cat > ~/.tirt_robot_args"
+            echo -n "已設定 bringup 參數: "
+            remote "cat ~/.tirt_robot_args"
+            echo "→ 生效請跑:./robotctl restart bringup"
+        fi
+        ;;
+
+    *)
+        die "未知指令 '$cmd'。可用:up / down / restart / attach / status / log / args / shell"
+        ;;
+esac

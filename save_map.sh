@@ -12,6 +12,10 @@ _here="$( cd "$( dirname "${BASH_SOURCE[0]:-$0}" )" && pwd )"
 source /opt/ros/humble/setup.bash
 if [ -f "$HOME/ros2_ws/install/setup.bash" ]; then source "$HOME/ros2_ws/install/setup.bash"; fi
 source "$_here/dds/setup_dds.sh"
+if [ -z "${FASTRTPS_DEFAULT_PROFILES_FILE:-}" ]; then
+    echo "save_map: DDS 沒設定好(見上面訊息),中止 —— 否則 map_saver 只會空等到逾時。" >&2
+    exit 1
+fi
 
 name="${1:-my_map}"
 # If a bare name (no slash) is given, drop it under the repo's maps/ dir.

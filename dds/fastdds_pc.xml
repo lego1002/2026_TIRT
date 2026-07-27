@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  Fast DDS profile —— 筆電(PC)端。與 fastdds_pi.xml 只差一行:whitelist 綁的是
+  本機的固定別名 10.77.0.1(Pi 那份綁 10.77.0.2);discovery server 位址兩份都指向
+  Pi 的 10.77.0.2:11811,因為 server 跑在 Pi 上。
+
+  完整的「為什麼要 Discovery Server」「為什麼是 SUPER_CLIENT 不是 CLIENT」
+  「為什麼要 interfaceWhiteList」三段理由,寫在 fastdds_pi.xml 的檔頭註解,
+  不在這裡重複。改任何一項之前請先讀那份。
+
+  ※ IP 是寫死的常數,對應 net/tirt_net.conf 的 TIRT_PI_IP / TIRT_PC_IP,換網段兩邊都要改。
+  ※ 由 dds/setup_dds.sh 自動挑選,不要手動指定 FASTRTPS_DEFAULT_PROFILES_FILE。
+-->
+<dds xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+    <profiles>
+        <transport_descriptors>
+            <transport_descriptor>
+                <transport_id>tirt_transport</transport_id>
+                <type>UDPv4</type>
+                <interfaceWhiteList>
+                    <address>10.77.0.1</address>
+                    <address>127.0.0.1</address>
+                </interfaceWhiteList>
+            </transport_descriptor>
+        </transport_descriptors>
+        <participant profile_name="tirt_participant" is_default_profile="true">
+            <rtps>
+                <userTransports>
+                    <transport_id>tirt_transport</transport_id>
+                </userTransports>
+                <useBuiltinTransports>false</useBuiltinTransports>
+                <builtin>
+                    <discovery_config>
+                        <discoveryProtocol>SUPER_CLIENT</discoveryProtocol>
+                        <discoveryServersList>
+                            <RemoteServer prefix="44.53.00.5f.45.50.52.4f.53.49.4d.41">
+                                <metatrafficUnicastLocatorList>
+                                    <locator>
+                                        <udpv4>
+                                            <address>10.77.0.2</address>
+                                            <port>11811</port>
+                                        </udpv4>
+                                    </locator>
+                                </metatrafficUnicastLocatorList>
+                            </RemoteServer>
+                        </discoveryServersList>
+                    </discovery_config>
+                </builtin>
+            </rtps>
+        </participant>
+    </profiles>
+</dds>

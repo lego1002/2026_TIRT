@@ -56,6 +56,8 @@ def generate_launch_description():
     axle_space_mm = LaunchConfiguration('axle_space_mm')
     encoder_ppr = LaunchConfiguration('encoder_ppr')
     gear_ratio = LaunchConfiguration('gear_ratio')
+    motor_pwm_max = LaunchConfiguration('motor_pwm_max')
+    motor_pwm_min = LaunchConfiguration('motor_pwm_min')
     pos_kp = LaunchConfiguration('pos_kp')
     pos_ki = LaunchConfiguration('pos_ki')
     pos_kd = LaunchConfiguration('pos_kd')
@@ -70,6 +72,8 @@ def generate_launch_description():
     use_gyro_heading = LaunchConfiguration('use_gyro_heading')
     gyro_z_sign = LaunchConfiguration('gyro_z_sign')
     gyro_scale = LaunchConfiguration('gyro_scale')
+    cmd_vel_timeout = LaunchConfiguration('cmd_vel_timeout')
+    cmd_vel_best_effort = LaunchConfiguration('cmd_vel_best_effort')
     laser_x = LaunchConfiguration('laser_x')
     laser_y = LaunchConfiguration('laser_y')
     laser_z = LaunchConfiguration('laser_z')
@@ -105,6 +109,17 @@ def generate_launch_description():
                               description='編碼器每轉脈衝數(原廠 165 為別台機器,換馬達要改)。'),
         DeclareLaunchArgument('gear_ratio', default_value='55',
                               description='減速比(原廠 55 為別台機器 1:55,換馬達要改)。'),
+        # PWM duty 上下限(寫進韌體,範圍 1~7199 = 0~100% duty)。原廠 3600/2100 來自
+        # 廠商自己的註解 "motor range: 3v-6v" —— 那是 12V 供電下**保護 6V 馬達**的限制。
+        # 這台用的是 12V 200rpm N20,所以 3600 = 50% duty = 6V,馬達只吃到額定的一半,
+        # 扭矩餘裕直接砍半。空中無負載永遠碰不到上限(所以怎麼測都正常),放到地板上
+        # 某顆輪子需要的扭矩超過 6V 能給的,PID 就飽和、掉隊 → 四輪不同步。
+        # 往 6800(94%)調在馬達額定內,但**先確認供電真的是 12V**,並且逐步往上加。
+        # ※ 不是這次「一頓一頓」的元凶:上禮拜好好的時候這兩個值一樣。這是餘裕問題。
+        DeclareLaunchArgument('motor_pwm_max', default_value='3600',
+                              description='PWM duty 上限(1~7199)。原廠 3600=50% duty,12V 供電下馬達只吃到 6V;12V 馬達可試 6800。'),
+        DeclareLaunchArgument('motor_pwm_min', default_value='2100',
+                              description='PWM duty 下限(1~7199)。原廠 2100=29% duty,低於此輪子不動(靜摩擦死區)。'),
         # 閉環 PID 增益:原廠為 1:55 重底盤調的,馬達不匹配可能過衝震盪。
         # 可從命令列調小(如 vel_kp:=1500)現場壓振動,不必重新 build。
         DeclareLaunchArgument('pos_kp', default_value='3000', description='位置環 Kp'),
@@ -144,6 +159,15 @@ def generate_launch_description():
                               description='陀螺 Z 正負號(odom 轉向反了就設 -1.0)。'),
         DeclareLaunchArgument('gyro_scale', default_value='1.014',
                               description='陀螺積分倍率(2026-07-25 tools/analyze_bag.py:odom 報 145.3° vs scan 真值 137.1° → 1.075×0.9435)。'),
+        # /cmd_vel 的 watchdog 與 QoS —— 2026-07-27 為了「WiFi 抖動害底盤一頓一頓」開出來。
+        # 舊的 0.5s 太短:命令從筆電經 WiFi 過來,傳輸卡個幾百毫秒 watchdog 就把底盤歸零、
+        # 下一筆到了又衝出去,操作者看到的就是一頓一頓。根治手段是把 teleop 搬到 Pi 上跑
+        # (gcs.sh / pi/robot_tmux.sh 已經這麼做,/cmd_vel 根本不過網路),這兩個參數是留給
+        # nav2 或其他 PC 端發布者的餘裕。
+        DeclareLaunchArgument('cmd_vel_timeout', default_value='1.0',
+                              description='多久沒收到 /cmd_vel 就把底盤歸零(秒)。'),
+        DeclareLaunchArgument('cmd_vel_best_effort', default_value='true',
+                              description='true=/cmd_vel 用 BEST_EFFORT(丟包的 WiFi 上不重傳過期指令);false=RELIABLE。'),
         # 光達外參(base_link -> laser_frame)。舊的 my_robot_lidar/lidar_start.launch.py
         # 這裡填全 0(註解自承是「假設雷達安裝在機器人中心上方」),但光達並不在中心:
         # URDF 的 lidar_joint 在 (0.0088, -0.061, 0.0427),而四顆輪子 joint 原點算出的
@@ -240,6 +264,8 @@ def generate_launch_description():
                 'axle_space_mm': ParameterValue(axle_space_mm, value_type=int),
                 'encoder_ppr': ParameterValue(encoder_ppr, value_type=int),
                 'gear_ratio': ParameterValue(gear_ratio, value_type=int),
+                'motor_pwm_max': ParameterValue(motor_pwm_max, value_type=int),
+                'motor_pwm_min': ParameterValue(motor_pwm_min, value_type=int),
                 'pos_kp': ParameterValue(pos_kp, value_type=int),
                 'pos_ki': ParameterValue(pos_ki, value_type=int),
                 'pos_kd': ParameterValue(pos_kd, value_type=int),
@@ -254,6 +280,8 @@ def generate_launch_description():
                 'use_gyro_heading': ParameterValue(use_gyro_heading, value_type=bool),
                 'gyro_z_sign': ParameterValue(gyro_z_sign, value_type=float),
                 'gyro_scale': ParameterValue(gyro_scale, value_type=float),
+                'cmd_vel_timeout': ParameterValue(cmd_vel_timeout, value_type=float),
+                'cmd_vel_best_effort': ParameterValue(cmd_vel_best_effort, value_type=bool),
             }],
             condition=UnlessCondition(use_fake_odom),
         ),

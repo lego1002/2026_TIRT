@@ -1,13 +1,21 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!--
-  兩件事一起做,缺一不可:
+  Fast DDS profile —— 樹莓派(Pi)端。PC 端請看同目錄的 fastdds_pc.xml。
+  由 dds/setup_dds.sh 依「本機是否持有 10.77.0.2」自動挑選,不要手動指定。
+
+  ※ 這裡的 IP 是寫死的常數,對應 net/tirt_net.conf 的 TIRT_PI_IP / TIRT_PC_IP。
+    要換網段時兩邊都要改(XML 沒辦法讀 shell 變數)。
+    以前這個檔是含 @LAN_IP@ 佔位符的範本,每次換場地要用 sed 重新渲染;
+    改用固定別名 IP 之後就不需要了 —— 這正是簡化的重點。
+
+  這份設定做兩件事,缺一不可:
 
   (1) 發現走 Fast DDS Discovery Server(純 unicast),不靠 multicast。
-      為什麼:實測這場地的 WiFi AP 不轉發 client 之間的 multicast(`ros2 multicast
+      為什麼:實測場地的 WiFi AP 不轉發 client 之間的 multicast(`ros2 multicast
       send`/`receive` 對測收不到,但 ping 通)。而 DDS 預設的自動發現(SPDP)靠 multicast,
-      所以兩台永遠互相看不見 —— `ros2 topic list` 甚至連對方 topic 都沒有。改成 client 對
-      固定的 discovery server(@SERVER_IP@:@SERVER_PORT@)做 unicast 發現就繞開了。
-      server 由 Pi 端 dds/run_discovery_server.sh 啟動(run_robot.sh 會自動拉起)。
+      所以兩台永遠互相看不見 —— `ros2 topic list` 甚至連對方 topic 都沒有。改成對固定的
+      discovery server 做 unicast 發現就繞開了。server 由 Pi 端的 tmux `dds` 視窗
+      (pi/robot_tmux.sh → dds/run_discovery_server.sh)持有。
       RemoteServer 的 prefix 44.53.00.5f... 是 `fastdds discovery -i 0`(server-id 0)的
       固定 GUID prefix,不要改。
 
@@ -21,38 +29,28 @@
       改成 SUPER_CLIENT 後 `ros2 topic list` 立刻列出全部 11 個 topic。
       代價是每個 participant 會收到全部發現流量 —— 這個規模的系統完全可忽略。
 
-  (2) 資料只走 LAN 介面(interfaceWhiteList = @LAN_IP@ + localhost),排除 tailscale0/docker。
-      為什麼:Pi/PC 都同時有 wlan0 + tailscale0(+ docker0)。就算發現接上了,若不綁介面,
+  (2) 資料只走固定別名 IP(interfaceWhiteList = 10.77.0.2 + localhost),
+      排除 tailscale0 / docker0 / DHCP 位址。
+      為什麼:Pi/PC 都同時有 wlan0 + tailscale0(+ docker0)。就算發現接上了,若不綁位址,
       /robot_description、/tf、/map 這類大樣本可能被走 tailscale(MTU 1280)傳 → 分片掉包 →
-      RViz 收不到 TF、畫面空白。綁死 LAN 就解決。
-
-  這是「範本」,含 @LAN_IP@ / @SERVER_IP@ / @SERVER_PORT@ 佔位符,不能直接指向本檔
-  (Fast DDS 會解析失敗)。改用同目錄的 setup_dds.sh 自動偵測本機 LAN IP、填入 server 位址、
-  渲染成可用 profile 並匯出 FASTRTPS_DEFAULT_PROFILES_FILE:
-
-    # Pi(同時是 server 主機):server 預設 = 自己的 LAN IP,不用多設
-    source /home/lego/2026_TIRT/dds/setup_dds.sh
-    # PC:要指定 discovery server 在哪(= Pi 的 LAN IP)
-    DDS_SERVER=192.168.0.70 source /home/lego/2026_TIRT/dds/setup_dds.sh
-
-  換場地/換 IP 時兩台各自重 source 一次即可。介面偵測不對時:DDS_IFACE=eth0 ... source。
+      RViz 收不到 TF、畫面空白。綁死別名就解決,而且順便讓兩台的通訊路徑完全確定。
 -->
 <dds xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
     <profiles>
         <transport_descriptors>
             <transport_descriptor>
-                <transport_id>lan_transport</transport_id>
+                <transport_id>tirt_transport</transport_id>
                 <type>UDPv4</type>
                 <interfaceWhiteList>
-                    <address>@LAN_IP@</address>
+                    <address>10.77.0.2</address>
                     <address>127.0.0.1</address>
                 </interfaceWhiteList>
             </transport_descriptor>
         </transport_descriptors>
-        <participant profile_name="lan_participant" is_default_profile="true">
+        <participant profile_name="tirt_participant" is_default_profile="true">
             <rtps>
                 <userTransports>
-                    <transport_id>lan_transport</transport_id>
+                    <transport_id>tirt_transport</transport_id>
                 </userTransports>
                 <useBuiltinTransports>false</useBuiltinTransports>
                 <builtin>
@@ -63,8 +61,8 @@
                                 <metatrafficUnicastLocatorList>
                                     <locator>
                                         <udpv4>
-                                            <address>@SERVER_IP@</address>
-                                            <port>@SERVER_PORT@</port>
+                                            <address>10.77.0.2</address>
+                                            <port>11811</port>
                                         </udpv4>
                                     </locator>
                                 </metatrafficUnicastLocatorList>

@@ -1,3 +1,17 @@
+> **2026-07-27 狀態:已落地,實作在 `net/`。**
+> 這份文件的結論(自帶熱點、不要用場地 Wi-Fi)已經寫成程式:
+> `net/60-tirt-wifi.yaml.example` 把手機熱點與實驗室網路一起寫進 Pi 的 netplan,
+> 連上哪個都自動;`net/tirt_net.conf` + `net/install_pc_alias.sh` 再加上固定第二 IP
+> (Pi `10.77.0.2` / 筆電 `10.77.0.1`),讓「換場地要重查 IP」這件事整個消失。
+> 操作流程見 `notes/雙機RViz連線.md` 開頭。下面保留原本的分析(手機熱點 vs 筆電熱點、
+> 為什麼不用場地 Wi-Fi),仍然有效;文末「下一步」要的東西已經拿到並做完了。
+>
+> 尚未做的:**筆電熱點**那一組還沒寫進 netplan(目前只有手機熱點 + RMML_2G)。
+> 手機熱點若在賽場遇到 AP isolation,補上這組即可 —— 加一組 `access-points` 再跑一次
+> `sudo ./net/install_pi_network.sh`。
+
+---
+
 -Fi 路由器:發出 SSID、給連上來的裝置發 IP(DHCP)、幫它們互相轉發封包。關鍵在於:
 
   Pi ──Wi-Fi──► 手機(當路由器) ◄──Wi-Fi── 筆電

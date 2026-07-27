@@ -98,7 +98,8 @@ human-editable text.
   `OminiBotHV-master/example` path) — **keep the `time.sleep()` delays in its `__init__`**: without the 0.5s
   after `forced_stop` and 0.1s between config frames the firmware never starts streaming feedback (verified on
   hardware). `driver_node.py` subscribes `/cmd_vel` → `robot_speed(lx,ly,az)` (with a watchdog that zeros the
-  base after `cmd_vel_timeout`), and a background read thread dead-reckons `/odom` + broadcasts
+  base after `cmd_vel_timeout` — **1.0 s and BEST_EFFORT depth-1 as of 2026-07-27**, see "Where teleop runs,
+  and why" under Runtime deployment for the WiFi-stutter reasoning), and a background read thread dead-reckons `/odom` + broadcasts
   `odom->base_link` TF from the board's body-velocity feedback, and publishes the IMU quaternion on `/imu`
   (accel/gyro layout unverified, so left out). Odom is integrated from velocity (not IMU heading) to keep the
   `odom` frame smooth for slam_toolbox. Default port is `/dev/serial0` — the board's USB (FTDI)
@@ -143,40 +144,71 @@ human-editable text.
     and turn speed "couldn't change"), `k`/space stop. Pad and turn keys are mutually exclusive (pressing one zeroes the other
     axis). It re-publishes the current `Twist` every loop (≥10 Hz) to keep the driver's `cmd_vel` watchdog
     fed. Run with `ros2 run ominibot_driver mecanum_teleop`.
-- `dds/fastdds_lan.xml` — Fast DDS profile **template** that does **two** things (as of 2026-07-24): (1)
-  configures every participant as a **Discovery Server CLIENT** pointing at a fixed unicast rendezvous
-  (`@SERVER_IP@:@SERVER_PORT@`, default port 11811, server GUID prefix `44.53.00.5f...` = `fastdds discovery
-  -i 0`), and (2) whitelists only the LAN interface + localhost so bulk data stays off tailscale. Placeholders
-  `@LAN_IP@`/`@SERVER_IP@`/`@SERVER_PORT@` mean you must **not** point `FASTRTPS_DEFAULT_PROFILES_FILE` at this
-  file directly (it won't parse) — `source dds/setup_dds.sh` instead. **Why the Discovery Server (hard-won,
-  2026-07-24):** the venue WiFi AP does **not forward multicast between wireless clients** (proven: `ros2
-  multicast send`/`receive` between Pi and PC receives nothing, yet `ping` works), so DDS's default
-  multicast-based discovery (SPDP) never links the two machines — `ros2 node list` on each side shows only its
-  own local nodes even with matching `ROS_DOMAIN_ID`, correct whitelist, same subnet, and firewall off. The
-  server gives discovery a unicast path that doesn't need multicast. The interfaceWhiteList is still needed on
-  top (data-path fragmentation over tailscale is a separate problem). Verified end-to-end with the rendered
-  profile via a talker/listener over the server.
-- `dds/setup_dds.sh` — renders the template with this machine's current LAN IP (auto-detected, excluding
-  tailscale/loopback/docker/virtual; override `DDS_IFACE=`) **and** the discovery-server address, then exports
-  `FASTRTPS_DEFAULT_PROFILES_FILE` and clears the stale `ros2 daemon` (see below). The server IP comes from
-  `DDS_SERVER` (default = this machine's own LAN IP): on the **Pi** (which hosts the server) that default is
-  correct with no extra config; on the **PC** you must run `DDS_SERVER=<pi_ip> source dds/setup_dds.sh` (or
-  export `DDS_SERVER` in `~/.bashrc`) or the client points at itself and never connects — `run_slam.sh`/
-  `run_rviz.sh` warn when `DDS_SERVER` is unset. Venue-portable: re-source after switching networks. Wired
-  into `~/.bashrc` on the Pi. **ros2 daemon caching gotcha:** the `ros2` CLI daemon caches discovery config
-  from whenever it first started, so a daemon spawned before this profile existed silently ignores it (`ros2
-  topic list` shows nothing / `echo` reports "could not determine type") — `setup_dds.sh` now runs `ros2
-  daemon stop` so the next command respawns it with the right profile; do the same by hand if a debug terminal
-  acts stale.
+- `net/` — the **venue-portability layer** (added 2026-07-27). The whole point: stop chasing DHCP IPs.
+  - `net/tirt_net.conf` — the single source of truth for the two fixed alias IPs (`TIRT_PI_IP=10.77.0.2`,
+    `TIRT_PC_IP=10.77.0.1`), the ssh user/repo path, DDS port, and the Pi tmux session name. Every value is
+    written `${VAR:-default}` so it can be overridden from the environment for a one-off test without editing
+    the file. Sourced by `setup_dds.sh`, `robotctl`, `gcs.sh`, `pi/robot_tmux.sh`, and both installers.
+  - **Why fixed alias IPs.** Each machine keeps DHCP *and* additionally holds a static `10.77.0.x/24` address
+    on its wireless interface. Venue IPs still come from DHCP (internet, tailscale), but the robot link only
+    ever uses the constants — so `DDS_SERVER=<pi_ip>` is gone, `ssh` has a fixed target, and switching networks
+    requires editing nothing. It also avoids mDNS, which would be the obvious alternative but travels by
+    multicast — exactly what the venue AP was proven to block (see the Discovery Server note below). The one
+    prerequisite is that the AP forwards *unicast* between clients; if it has full client isolation nothing
+    works anyway, which is what the self-hosted-hotspot plan in `networkplan.md` is for.
+  - `net/60-tirt-wifi.yaml.example` → copy to `net/60-tirt-wifi.yaml`, fill in SSIDs/passwords, install with
+    `sudo ./net/install_pi_network.sh`. Lists **all** venues' `access-points` at once (phone hotspot, RMML_2G,
+    …) so wpa_supplicant auto-joins whichever is present, plus `addresses: [10.77.0.2/24]` alongside
+    `dhcp4: true`. Note **netplan 0.107.1 has no per-AP `priority` key** (verified) — with two networks in
+    range the choice is by signal strength; that's fine since they don't co-occur in practice. The installer
+    uses **`netplan try`** (auto-rollback after 120 s), never `netplan apply` — a bad wifi block otherwise
+    kills SSH permanently. The real file is gitignored; only the `.example` is tracked (it holds passwords).
+  - `net/install_pc_alias.sh` — laptop side. Adds `10.77.0.1/24` immediately *and* persists it at the
+    **interface** level, not per-SSID (a per-connection setting would need redoing for every new venue):
+    a NetworkManager dispatcher script `/etc/NetworkManager/dispatcher.d/90-tirt-alias`, or a
+    systemd-networkd `.network.d/tirt-alias.conf` drop-in, whichever the laptop actually uses.
+  - `net/alias_now.sh pi|pc [--off]` — adds the alias **non-persistently** (`ip addr add`, gone on reboot).
+    The escape hatch for "I want to drive today and haven't filled in the WiFi passwords yet", and for
+    debugging. Once the two installers above have run, this is never needed.
+- `dds/fastdds_pi.xml` / `dds/fastdds_pc.xml` — the two Fast DDS profiles, one per machine. They replaced the
+  old `fastdds_lan.xml` **template** on 2026-07-27: because both endpoints now have constant IPs, the
+  `@LAN_IP@`/`@SERVER_IP@` placeholders and the whole `sed`-render-per-venue mechanism became unnecessary.
+  Each profile (1) makes every participant a Discovery Server **SUPER_CLIENT** of `10.77.0.2:11811` (server
+  GUID prefix `44.53.00.5f...` = `fastdds discovery -i 0`; do not change it), and (2) whitelists only that
+  machine's own alias + `127.0.0.1`. The full rationale for both lives in `fastdds_pi.xml`'s header comment;
+  `fastdds_pc.xml` deliberately doesn't repeat it. **Why the Discovery Server (hard-won, 2026-07-24):** the
+  venue WiFi AP does **not forward multicast between wireless clients** (proven: `ros2 multicast
+  send`/`receive` between Pi and PC receives nothing, yet `ping` works), so DDS's default multicast-based
+  discovery (SPDP) never links the two machines — `ros2 node list` on each side shows only its own local nodes
+  even with matching `ROS_DOMAIN_ID`, correct whitelist, same subnet, and firewall off. The server gives
+  discovery a unicast path that doesn't need multicast. The interfaceWhiteList is still needed on top
+  (data-path fragmentation over tailscale is a separate problem).
+- `dds/setup_dds.sh` — `source` it (both machines, same command, no arguments). Picks `fastdds_pi.xml` or
+  `fastdds_pc.xml` by checking **which alias IP this machine holds** (force with `TIRT_ROLE=pi|pc`), exports
+  `FASTRTPS_DEFAULT_PROFILES_FILE`, and clears the stale `ros2 daemon`. Two behaviours worth knowing:
+  - **No alias → it errors, unsets `FASTRTPS_DEFAULT_PROFILES_FILE`, and configures nothing.** The unset is
+    not cosmetic: `~/.bashrc` sources this file, so a shell can inherit the *old* rendered
+    `/run/user/1000/fastdds_active.xml` path; every launcher's guard is `[ -z "$FASTRTPS_..." ]`, and a stale
+    value would sail through it and start a robot that silently talks to nobody. All of `run_robot.sh`,
+    `run_slam.sh`, `run_rviz.sh`, `save_map.sh`, `gcs.sh` now abort on an empty value rather than start.
+  - Re-sourcing when it is already correct is a **silent no-op** — `~/.bashrc` plus each tmux window's rc file
+    means it gets sourced 2–3 times per window, and without this every window opened with duplicate banners.
+  - **ros2 daemon caching gotcha:** the `ros2` CLI daemon caches discovery config from whenever it first
+    started, so a daemon spawned before this profile existed silently ignores it (`ros2 topic list` shows
+    nothing / `echo` reports "could not determine type") — `setup_dds.sh` runs `ros2 daemon stop` so the next
+    command respawns it correctly; do the same by hand if a debug terminal acts stale.
 - `dds/run_discovery_server.sh` — starts the Fast DDS Discovery Server (`fastdds discovery -i 0 -p 11811`,
-  bound to `0.0.0.0` so it survives the Pi's DHCP IP changing) on the **Pi**. `run_robot.sh` auto-starts it in
-  the background (logs to `/tmp/dds_discovery_server.log`); run it by hand only to host the server without the
-  full bringup. Leave server-id 0 — its GUID prefix is hard-coded as the `RemoteServer` prefix in the template.
+  bound to `0.0.0.0`) on the **Pi**. It is **not** started by `run_robot.sh` any more (it used to be, in the
+  background, logging to `/tmp`): `pi/robot_tmux.sh` gives it its own `dds` tmux window so its output is
+  visible, and — more importantly — so restarting the bringup doesn't restart the server underneath it, which
+  would force every PC-side node to re-discover. Leave server-id 0; its GUID prefix is hard-coded in both
+  `fastdds_*.xml`.
 - `udev/99-rplidar.rules` — udev rule binding the RPLidar C1 (CP2102N, VID 10c4 / PID ea60) to `/dev/rplidar`
   by USB serial, so a future chassis board on another CP210x adapter won't steal the port. Install per the
   header comment (`cp` to `/etc/udev/rules.d/`, reload, trigger).
-- `run_robot.sh` / `run_slam.sh` / `run_rviz.sh` / `save_map.sh` — one-click entry points (see "Runtime
-  deployment" below).
+- `gcs.sh` / `robotctl` / `pi/robot_tmux.sh` — the operator entry points (see "Runtime deployment" below).
+  `run_robot.sh` / `run_slam.sh` / `run_rviz.sh` / `save_map.sh` are still there and still work standalone,
+  but are now mostly called *by* those three.
 - `maps/` — saved SLAM maps (`.pgm` + `.yaml` pairs) produced by `save_map.sh`.
 - `tools/` — standalone diagnostic scripts (plain `python3 foo.py`, no colcon package, no rebuild).
   `odom_check.py` prints live cumulative displacement/heading from `/odom` in metres and **degrees**
@@ -186,6 +218,20 @@ human-editable text.
   update, to distinguish "SLAM is republishing a dead map on `map_update_interval`" from "the map is
   actually growing" — `ros2 topic hz /map` cannot tell those apart. It subscribes with
   `TRANSIENT_LOCAL` durability to match slam_toolbox's latched publisher.
+  `motor_diag.py --label air|floor` is the entry point for **chassis control / stutter** problems
+  (2026-07-26). It measures three independent axes in one run — **serial link health**
+  (`good`/`bcc_fail`/`desync`/`timeout` from `OminiBotHV.stats`), **body-velocity dropout**
+  (the quantification of "一頓一頓": what fraction of samples collapse toward zero while the
+  command is held constant), and **four-wheel sync** (per-wheel encoder rates via the `0x36`
+  readback). Run it **twice** (`--label air`, then `--label floor`); a single run proves nothing,
+  the air↔floor difference is the diagnosis. Interpretation is built into its output. It needs the
+  driver stopped (`pkill -f ominibot_driver`) since the port is exclusive.
+  `cmd_vel_check.py` is the **network-side** counterpart to `motor_diag.py` (2026-07-27): run it on the
+  Pi while driving and it reports the `/cmd_vel` inter-arrival p50/p95/p99/max and, crucially, **how many
+  gaps exceeded `cmd_vel_timeout`** — each one is a watchdog trip that zeroes the base, which is what
+  "一頓一頓" feels like. `ros2 topic hz` cannot show this: a stream averaging a healthy 20 Hz can still
+  stall 0.8 s every few seconds. Use it to decide *which* tool to reach for next — clean arrival with a
+  still-stuttering robot means the problem is mechanical/electrical, so go to `motor_diag.py`.
   `record_diag.py <out_dir>` **replaces `ros2 bag record` on the Pi**, which silently produces an empty
   bag there: `ros2 bag record` finds its publishers through the same CLI graph query that is blind under
   the Discovery Server, so it subscribes to nothing and reports no error (verified 2026-07-25 — a 60 s
@@ -279,29 +325,85 @@ figures, not left as a placeholder.
 
 ## Runtime deployment (two-machine setup)
 
-The live robot runs **split across two machines** talking over ROS 2 DDS — `notes/雙機RViz連線.md` is the full
-runbook (though its "two-machine" description predates the 2026-07-21 SLAM move and should be read alongside
-`slam_pc.launch.py`'s docstring, which explains the current split); the essentials:
+The live robot runs **split across two machines** talking over ROS 2 DDS. As of **2026-07-27 the operator
+workflow is one command on the laptop and zero commands on the Pi**; `notes/雙機RViz連線.md` is the full
+runbook. The previous flow (ssh into the Pi for `./run_robot.sh`, then four more laptop terminals, each
+needing `DDS_SERVER=<pi_ip>` looked up by hand) is gone — read this section, not older descriptions of it.
 
-- **Raspberry Pi = headless backend** (the robot). One-click: `./run_robot.sh` (repo root) — sources ROS +
-  workspace + `dds/setup_dds.sh`, kills any stale bringup/driver from a previous run (orphaned launch children
-  otherwise hold the GPIO-UART port open and a second driver instance fights over it, corrupting reads),
-  starts the **Fast DDS Discovery Server** in the background (`dds/run_discovery_server.sh` — the unicast
-  rendezvous both machines' nodes connect to; see the DDS section), then runs `robot_bringup.launch.py` with
-  `use_slam:=false` by default (real chassis + lidar `/scan` + model TF; no SLAM on the Pi). Pass-through args
-  work, e.g. `./run_robot.sh use_fake_odom:=true` or `./run_robot.sh use_slam:=true` for a single-machine
-  fallback.
-- **Ubuntu PC = SLAM + viewer.** Two one-click scripts: `./run_slam.sh` runs `slam_pc.launch.py`
-  (`async_slam_toolbox_node`, killing any stale instance first so `map->odom` isn't published twice) — this
-  is where scan matching now happens, moved off the Pi 4 because it couldn't keep up with 10 Hz scans
-  alongside everything else running there (dropped scans + drifting odom produced a rotating "fan smear"
-  map). `./run_rviz.sh` opens `rviz2` with `rviz/view_robot.rviz` (Grid, RobotModel, LaserScan, Map, Odometry,
-  TF preconfigured; Fixed Frame `map`). Both need `car_assemble_description` built locally on the PC (for
-  `package://` mesh paths and the in-repo `mapper_params_online_async.yaml`) plus `ros-humble-slam-toolbox`
-  installed — but not `sllidar_ros2`, which stays Pi-only.
-- The operator then opens two more terminals on the PC: `ros2 run ominibot_driver mecanum_teleop` to drive,
-  and `./save_map.sh <name>` to save the map (wraps `map_saver_cli` with `save_map_timeout:=10.0` — the
-  default ~2 s timeout often misses the latched `/map` and errors out; bare names land in `maps/`).
+### The one command
+
+```bash
+./gcs.sh                       # laptop, repo root. That's the whole startup.
+./gcs.sh use_fake_odom:=true   # any robot_bringup.launch.py arg passes through to the Pi
+./gcs.sh --down                # shut everything down, both machines
+```
+
+`gcs.sh` sources the local DDS profile, calls `robotctl up` to start the Pi over ssh, opens a laptop tmux
+session (`robot` = live Pi output + keyboard teleop, `slam` = `run_slam.sh`, `shell` = scratch, with
+`Ctrl-b m` bound to save a timestamped map), and launches RViz detached as a GUI window.
+
+### Pi side: a tmux session, not a service
+
+`pi/robot_tmux.sh` (invoked over ssh by `robotctl`, runnable directly on the Pi) owns a tmux session `tirt`
+with one window per concern: `dds` (discovery server), `bringup` (`run_robot.sh`), `teleop`, `shell`. Design
+notes that matter:
+
+- **Deliberately manual, deliberately not systemd.** The operator wants to see each piece start and to be able
+  to isolate a failure. Attaching shows exactly what an interactive ssh session would.
+- Commands are delivered with `tmux send-keys` into an interactive bash rather than being the window's
+  process, so each command **lands in that shell's history** — Ctrl-C then ↑ Enter re-runs just that piece.
+- Each window's bash starts from a generated rc file that sources ROS + `~/ros2_ws` + `dds/setup_dds.sh`, so
+  every window is ready for ad-hoc `ros2` commands.
+- The session's tmux prefix is **`Ctrl-a`**, because the laptop session (`Ctrl-b`) nests it.
+- `robot_tmux.sh up` waits up to 30 s for the `10.77.0.2` alias before starting anything — without it the
+  robot would come up looking healthy and be unreachable.
+- Bringup args live in `~/.tirt_robot_args` on the Pi (`./robotctl args "..."`), so they survive restarts and
+  don't require editing anything.
+
+### `robotctl` — laptop-side remote control (no ssh session needed)
+
+```
+./robotctl up [dds|bringup|teleop|shell]   # default all; already-running windows untouched
+./robotctl restart bringup                 # restart ONE piece; dds keeps running so the PC never re-discovers
+./robotctl down [window|all]
+./robotctl attach                          # live Pi output + teleop keyboard (Ctrl-a d to leave)
+./robotctl status                          # per-window state + alias IPs on BOTH sides + PC-visible topics
+./robotctl log bringup [lines]             # capture-pane, no attach needed
+./robotctl args "use_fake_odom:=true"      # then: ./robotctl restart bringup
+./robotctl shell
+```
+
+It targets `lego@10.77.0.2` — a constant, so there is never an IP to look up. It requires passwordless ssh
+(`ssh-copy-id lego@10.77.0.2`) and diagnoses the link itself before every command (ping → ssh → alias
+present on each side), which is why `status` reports Pi state and laptop state separately: "the Pi says the
+node is alive" and "the laptop can actually see its topics" are different failures.
+
+### Where teleop runs, and why
+
+**Keyboard teleop runs on the Pi**, and you type into it over ssh from the laptop's `robot` window. This is
+the fix for the "cmd_vel 資料怪怪的 / 一頓一頓" symptom: previously teleop ran on the laptop and `/cmd_vel`
+crossed WiFi, so an ordinary transport stall longer than the driver's `cmd_vel_timeout` tripped the watchdog,
+zeroed the base, and then resumed — a stutter with no mechanical cause. With teleop on the Pi, `/cmd_vel`
+never leaves the machine; keystrokes travel over ssh (TCP, reliable, tiny), so a WiFi hiccup delays a
+keypress instead of stopping the robot. Two belt-and-braces changes back this up for future PC-side
+publishers (nav2): `cmd_vel_timeout` 0.5 → 1.0 s, and `/cmd_vel` QoS is now **BEST_EFFORT depth-1** on both
+the driver's subscription and the teleop publisher (`cmd_vel_best_effort:=false` to force RELIABLE).
+Quantify any of this with `tools/cmd_vel_check.py` run on the Pi.
+
+### PC side pieces (still usable standalone)
+
+`./run_slam.sh` runs `slam_pc.launch.py`, which as of 2026-07-27 starts **`async_slam_toolbox_node` *and*
+RViz together** (`use_rviz`, default true) — they were never useful separately, and splitting them cost an
+extra terminal. RViz loads `rviz/view_robot.rviz` (Grid, RobotModel, LaserScan, Map with Durability
+**Transient Local** so the latched map arrives, Odometry, TF; Fixed Frame `map`), so no displays need adding
+by hand. Closing the RViz window does **not** stop SLAM — reopen with `./run_rviz.sh`, which still exists for
+exactly that. Scan matching lives on the PC because the Pi 4 couldn't keep up with 10 Hz scans alongside
+everything else (dropped scans + drifting odom produced a rotating "fan smear" map); `run_slam.sh` kills a
+stale instance first so `map->odom` isn't published twice. `./save_map.sh <name>` wraps `map_saver_cli` with
+`save_map_timeout:=10.0` — the default ~2 s often misses the latched `/map`; bare names land in `maps/`.
+All three need `car_assemble_description` built locally on the PC (for `package://` mesh paths and the in-repo
+`mapper_params_online_async.yaml`) plus `ros-humble-slam-toolbox` — but not `sllidar_ros2`, which stays
+Pi-only. Each aborts if `dds/setup_dds.sh` didn't configure a profile.
 
 `car_assemble_description` is not fully self-contained at runtime: `robot_bringup.launch.py` still depends on
 `sllidar_ros2` for the lidar driver node, which lives in the ROS 2 workspace (`~/ros2_ws/src/`), **not in this
@@ -316,9 +418,10 @@ mutually exclusive (both publish that same TF). The package is symlinked into `~
 `colcon build --symlink-install`, so editing `launch/`, `rviz/`, `config/` needs no rebuild; only
 `package.xml`/`CMakeLists.txt` changes do.
 
-Both machines must share `ROS_DOMAIN_ID`, set `ROS_LOCALHOST_ONLY=0`, and `source dds/setup_dds.sh` (the PC
-with `DDS_SERVER=<pi_ip>` — see the `dds/` bullets above). This gives them **two** independent fixes that the
-two-machine link needs, and both are mandatory:
+Both machines must share `ROS_DOMAIN_ID` and `source dds/setup_dds.sh` — the **same command on both**, with no
+`DDS_SERVER` argument, since 2026-07-27 (it exports `ROS_LOCALHOST_ONLY=0` and `RMW_IMPLEMENTATION` too). The
+prerequisite is that each machine holds its fixed alias IP; see the `net/` bullets above. This gives them
+**two** independent fixes that the two-machine link needs, and both are mandatory:
 - **Discovery** goes through the Pi's Fast DDS **Discovery Server** (unicast), because the venue WiFi AP does
   not forward multicast between clients and DDS's default discovery is multicast-based. Symptom when this is
   the problem: `ros2 node list` on each machine shows only its **own** nodes even though `ping` works,
@@ -333,7 +436,7 @@ When debugging connectivity, "topic appears in `list`" ≠ "data is arriving" �
 look wrong right after re-sourcing, `ros2 daemon stop` and retry (`setup_dds.sh` does this automatically).
 
 **`ros2 topic list` used to be blind on the Pi; that is fixed as of 2026-07-26** — the cause was
-`<discoveryProtocol>CLIENT</discoveryProtocol>` in `dds/fastdds_lan.xml`. A Discovery Server only forwards to a
+`<discoveryProtocol>CLIENT</discoveryProtocol>` in the DDS profile. A Discovery Server only forwards to a
 CLIENT the discovery data that *matches that client's own endpoints*; `ros2 topic list` subscribes to nothing,
 so it was told nothing and listed only its own `/parameter_events` and `/rosout` — while a plain rclpy
 subscriber in the same shell happily received 62 `/odom` messages in 5 s. The profile now uses

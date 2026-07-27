@@ -1,19 +1,103 @@
-# 雙機視覺化:Pi 純後端跑,Ubuntu PC 看 RViz
+# 雙機操作手冊(2026-07-27 改版)
 
-架構:**樹莓派(headless server)= 機器人本體**,跑光達 + SLAM + 車體模型;
-**Ubuntu PC = 純觀看端**,只跑 RViz2。兩台同一個 Wi-Fi/網段,靠 ROS 2 DDS 自動探索,
-資料走網路傳輸,不是 `ssh -X` 把視窗轉過來(效能好很多,也不佔 Pi 的 GPU)。
-
-SSH 只是用來「登入 Pi 下指令啟動後端」,RViz 本身跑在 PC 上。
+架構沒變:**樹莓派 = 機器人本體**(光達 + 底盤 + 車體模型),**Ubuntu PC = SLAM + 觀看端**,
+兩台走 ROS 2 DDS 傳資料(不是 `ssh -X` 轉視窗)。**變的是操作流程**:以前要 ssh 進 Pi 開一個終端、
+再在筆電開四個終端、而且每個都要先查出 Pi 當下的 IP 手打 `DDS_SERVER=<pi_ip>`。現在是:
 
 ```
-┌─────────────── 樹莓派 (headless) ───────────────┐        ┌──────── Ubuntu PC ────────┐
-│ ros2 launch car_assemble_description             │  DDS   │ rviz2 -d view_robot.rviz  │
-│   robot_bringup.launch.py                        │◄──────►│ (看車體 + 光達 + 地圖)     │
-│   = robot_state_publisher + joint_state_publisher│  網路  │                           │
-│   + 光達驅動 + SLAM + (暫時)fake odom            │        │                           │
-└──────────────────────────────────────────────────┘        └───────────────────────────┘
+筆電打一行 ./gcs.sh —— 結束。Pi 端零指令,也不必知道任何 IP。
 ```
+
+```
+┌─────────── 樹莓派 10.77.0.2(固定,換場地不變)──────────┐        ┌───── Ubuntu PC 10.77.0.1 ─────┐
+│ tmux session `tirt`(prefix = Ctrl-a)                    │  DDS   │ tmux session `gcs`(Ctrl-b)    │
+│   [0] dds      Fast DDS Discovery Server                 │◄──────►│   [0] slam   run_slam.sh      │
+│   [1] bringup  光達 + 底盤 + 車體 TF                      │        │   [1] shell  存圖等雜事        │
+│   [2] teleop   鍵盤遙控(★ 跑在這邊,cmd_vel 不過網路)   │        │   [2] robot  ←attach 到左邊     │
+│   [3] shell                                              │        │ + RViz2(獨立 GUI 視窗)        │
+└──────────────────────────────────────────────────────────┘        └───────────────────────────────┘
+        ▲ 由筆電的 ./robotctl 經 ssh 遠端起停,不必自己 ssh 進去
+```
+
+---
+
+## 快速流程(平常就照這個做)
+
+```bash
+# 筆電,repo 根目錄
+./gcs.sh                        # 全部起來並進入操作畫面
+                                #   Ctrl-b 2 → robot 視窗:Pi 的即時輸出,也在這裡按鍵開車
+                                #   Ctrl-b m → 存一張以時間命名的地圖
+                                #   Ctrl-b 0 → slam 視窗
+./gcs.sh --down                 # 收工,兩台一起關
+```
+
+在 `robot` 視窗裡是 **Pi 的 tmux**,它的 prefix 是 `Ctrl-a`(不是 `Ctrl-b`):
+
+| 按鍵 | 作用 |
+|---|---|
+| `Ctrl-a 0/1/2/3` | 切到 dds / bringup / teleop / shell |
+| `Ctrl-a d` | 離開 Pi 的 tmux 回到筆電(**不要用 Ctrl-c**) |
+
+排查單一段落時不必整套重開:
+
+```bash
+./robotctl status               # 哪個視窗死了、兩邊的固定 IP 在不在、筆電看不看得到 topic
+./robotctl restart bringup      # 只重跑底盤+光達,dds 不動 → PC 端不必重新發現
+./robotctl log bringup 200      # 不 attach 也能看最近輸出
+./robotctl args "use_fake_odom:=true" && ./robotctl restart bringup
+```
+或者直接在該視窗 `Ctrl-c`,再按 `↑` `Enter` 重跑同一行 —— 指令本來就在那個 shell 的歷史裡。
+
+---
+
+## 一次性前置(每台各做一次,之後換場地都不用再碰)
+
+```bash
+# --- Pi ---
+sudo apt-get install -y ros-humble-slam-toolbox ros-humble-joint-state-publisher tmux
+cp net/60-tirt-wifi.yaml.example net/60-tirt-wifi.yaml
+$EDITOR net/60-tirt-wifi.yaml          # 填入手機熱點 / RMML_2G 的 SSID 與密碼
+sudo ./net/install_pi_network.sh       # 用 netplan try 套用,斷線 120 秒自動回滾
+
+# --- 筆電 ---
+sudo apt-get install -y ros-humble-slam-toolbox tmux
+sudo ./net/install_pc_alias.sh         # 掛上 10.77.0.1
+ssh-copy-id lego@10.77.0.2             # robotctl 需要免密碼 ssh
+cd ~/ros2_ws && colcon build --packages-select car_assemble_description --symlink-install
+
+# --- 驗證 ---
+ping -c3 10.77.0.2                     # 筆電 → Pi
+./robotctl status
+```
+
+**換場地要做什麼?** 什麼都不用做。只要兩台都連上同一個(已寫進 netplan 的)WiFi,
+`10.77.0.1` / `10.77.0.2` 就會在,所有腳本照跑。要加新場地才需要在
+`net/60-tirt-wifi.yaml` 多加一組 `access-points` 並重跑 `install_pi_network.sh`。
+
+**為什麼不用 mDNS / 不用查 IP**:場地 AP 實測不轉發 client 之間的 multicast,而 mDNS 正是走
+multicast,到了賽場一樣會死。固定第二 IP 不依賴任何探索機制,只需要 AP 肯轉發 unicast(ping 通就是了)。
+
+---
+
+## 遙控為什麼改在 Pi 上跑
+
+以前 teleop 跑在筆電,`/cmd_vel` 要穿越 WiFi 才到底盤。WiFi 卡個幾百毫秒,超過 driver 的
+`cmd_vel_timeout`,watchdog 就把底盤歸零,下一筆到了又衝出去 —— 這就是「一頓一頓」,
+車子和韌體其實都沒問題。現在 teleop 節點跑在 Pi 上,`/cmd_vel` 全程在同一台機器內,
+你在 `robot` 視窗按的鍵是走 ssh(TCP,可靠)過去的,WiFi 抖動最多讓按鍵晚一點到,不會停車。
+
+要量化驗證:在 Pi 上跑 `python3 tools/cmd_vel_check.py`,一邊開車,Ctrl-C 看
+「超過 watchdog 幾次」。搬到 Pi 之後應該是 0 次。
+
+---
+
+## 以下為舊流程與排查記錄
+
+下面的章節是 2026-07-27 改版**之前**的手動流程。日常操作請用上面的新流程 —— 舊章節裡
+「一、兩台都要設的網路環境變數」提到的 `DDS_SERVER=<pi_ip>`、`DDS_IFACE`、
+以及「二、Pi 端:啟動機器人後端」的 ssh + `./run_robot.sh` 都已經**不再需要**。
+保留它們是因為「五、連不到的排查」與「⚠ 多介面」兩節的除錯知識仍然有效。
 
 ---
 

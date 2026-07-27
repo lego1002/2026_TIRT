@@ -7,6 +7,24 @@ does not depend on the vendor example being on the Python path. Frame format is
 Two threads use one instance: the ROS timer thread calls robot_speed()/forced_stop()
 (writes), the read thread calls read_feedback() (reads). Writes are guarded by a lock;
 pyserial allows a concurrent read on another thread.
+
+Two frame lengths arrive on the same wire and the parser must tell them apart:
+
+  * the 32-byte **streaming** feedback frame (body velocity + IMU + battery), which
+    carries 0x00 in the byte after the 0x7b start marker (PDF p.20 "預留"), and
+  * the 14-byte **readback reply** frames (0x33/0x34/0x35/0x36/0x50, PDF p.14-18),
+    which carry their own command code in that same position.
+
+The old parser assumed every frame was 32 bytes, so a single readback reply
+desynced it for several frames afterwards. It now branches on that byte, which is
+what makes read_motor_speeds() (per-wheel encoder rates, 0x36) usable while the
+board is streaming.
+
+`stats` counts frame outcomes. This exists because the board->Pi link moved from
+USB (FTDI) to the Pi's GPIO UART on 2026-07-19, and raw UART jumpers next to
+motor leads are exactly the kind of link that corrupts frames only once the
+motors draw current. read_feedback() returns None for timeout / desync / bad BCC
+alike, so without these counters a noisy link and an idle one look identical.
 """
 
 import struct
@@ -14,6 +32,16 @@ import threading
 import time
 
 import serial
+
+# Readback reply command codes (PDF p.14). 14-byte frames, as opposed to the
+# 32-byte streaming feedback frame which has 0x00 in the same byte position.
+REPLY_SYSTEM = 0x33     # 系統配置 (motor/encoder dir, PWM limits, encoder PPR)
+REPLY_GEOMETRY = 0x34   # 小車尺寸參數 (wheel/axle space, gear ratio, diameter)
+REPLY_BODY_VEL = 0x35   # 車體速度控制模式 (Vx, Vy, Vz)
+REPLY_MOTOR_VEL = 0x36  # 各馬達獨立控制 with 編碼器 (M1..M4)  <-- per-wheel eye
+REPLY_PID = 0x50        # PID 參數
+REPLY_CODES = (REPLY_SYSTEM, REPLY_GEOMETRY, REPLY_BODY_VEL,
+               REPLY_MOTOR_VEL, REPLY_PID)
 
 
 class OminiBotHV:
@@ -41,6 +69,24 @@ class OminiBotHV:
         self.ser = serial.Serial(port, baud, timeout=1, exclusive=True)
         self.robot_mode = divisor_mode
         self._write_lock = threading.Lock()
+
+        # Serial link health. Incremented by read_feedback(); plain int += under
+        # the GIL, so the read thread can count while another thread snapshots.
+        # A rising bcc_fail/desync rate *while the motors are loaded* is the
+        # signature of electrical noise on the GPIO-UART link (missing/thin
+        # ground return, TX/RX routed alongside motor leads) -- not of a ROS,
+        # calibration or mechanical fault.
+        self.stats = {
+            'good': 0,        # valid 32-byte streaming frame
+            'bcc_fail': 0,    # framed correctly but checksum wrong -> corrupted bits
+            'desync': 0,      # unexpected byte where a marker was expected
+            'timeout': 0,     # nothing on the wire within the read timeout
+            'short': 0,       # frame truncated mid-read
+            'reply': 0,       # valid 14-byte readback reply
+            'reply_bad': 0,   # readback reply with a bad checksum
+        }
+        # code -> {'payload': bytes, 'time': monotonic, 'bcc_ok': bool}
+        self.last_reply = {}
 
         # The firmware needs settle time between config frames; without these
         # delays it never starts streaming feedback (matches the vendor example).
@@ -117,33 +163,117 @@ class OminiBotHV:
             frame += struct.pack('!i', int(m * 1000))[2:]
         self._send(frame)
 
+    def request_readback(self, code):
+        """Ask the board to send one 14-byte readback reply (see REPLY_* codes).
+
+        The reply arrives interleaved with the streaming feedback, so it is
+        read_feedback() that picks it up and stashes it in self.last_reply.
+        """
+        self._send(bytearray([0x7b, code]) + bytearray(10))
+
+    def read_motor_speeds(self, timeout=1.0):
+        """Per-wheel encoder rates (m1..m4) via the 0x36 readback, or None.
+
+        This is the only way to see the four wheels *individually*: the
+        streaming frame reports body velocity, which the firmware has already
+        collapsed from four encoders to three numbers via the mecanum forward
+        kinematics (PDF p.33). That projection discards exactly one degree of
+        freedom -- (V1 - V2 - V3 + V4), the wheel-desync/slip mode -- so
+        "are the four wheels keeping up with each other?" is structurally
+        unanswerable from /odom no matter how it is post-processed.
+
+        Units are the board's own (raw/1000, "mm/s 或是 1000*r" per PDF p.10),
+        NOT calibrated SI -- the board's internal scale is ~6.5x off for this
+        chassis. That does not matter for a sync check, which compares the four
+        against each other.
+
+        NOTE: unverified on this board as of 2026-07-26. The vendor example only
+        ever implements the 0x33/0x34/0x50 readbacks; 0x35/0x36 are documented
+        (PDF p.14-15) but never exercised. Returns None if the board does not
+        answer, so callers must handle that rather than assume support.
+        """
+        self.request_readback(REPLY_MOTOR_VEL)
+        sent_at = time.monotonic()
+        deadline = sent_at + timeout
+        while time.monotonic() < deadline:
+            self.read_feedback()    # drains the stream, stashes any reply
+            reply = self.last_reply.get(REPLY_MOTOR_VEL)
+            if reply and reply['time'] >= sent_at:
+                p = reply['payload']    # p[0]=控制模式 p[1]=小車型別 p[2:]=M1..M4
+                return tuple(
+                    int.from_bytes(p[2 + 2 * i:4 + 2 * i], 'big', signed=True) / 1000.0
+                    for i in range(4))
+        return None
+
+    def _read_reply(self, code):
+        """Consume the rest of a 14-byte readback reply and stash it."""
+        rest = self.ser.read(12)        # payload(10) + bcc(1) + 0x7d(1)
+        if len(rest) < 12:
+            self.stats['short'] += 1
+            return
+        payload, bcc, end = rest[0:10], rest[10], rest[11]
+        bcc_ok = (self.calculate_bcc(bytearray([0x7b, code]) + payload) == bcc
+                  and end == 0x7d)
+        self.stats['reply' if bcc_ok else 'reply_bad'] += 1
+        self.last_reply[code] = {
+            'payload': payload,
+            'time': time.monotonic(),
+            'bcc_ok': bcc_ok,
+        }
+
     def read_feedback(self):
         """Read one feedback frame from the streaming board.
 
-        Frame after the 0x7b start byte:
-          flag(1) vel(6) imu(20) battery(2) bcc(1) 0x7d(1)  = 31 bytes
+        Streaming frame, after the 0x7b start byte:
+          0x00(1) vel(6) imu(20) battery(2) bcc(1) 0x7d(1)  = 31 bytes
 
-        Returns dict {lx, ly, az, qw, qx, qy, qz, battery} on a valid frame,
-        or None on timeout / desync / bad checksum (caller just retries).
+        A 14-byte readback reply (0x33/0x34/0x35/0x36/0x50 in place of that
+        0x00) is consumed and stashed in self.last_reply instead; this method
+        still returns None for it, so the caller's loop is unaffected.
+
+        Returns dict {lx, ly, az, gyro_z, qw, qx, qy, qz, battery} on a valid
+        streaming frame, or None on timeout / desync / bad checksum / readback
+        reply (caller just retries). Every outcome bumps a self.stats counter --
+        check those to tell a quiet link from a corrupted one.
         """
         start = self.ser.read(1)
+        if start == b'':
+            self.stats['timeout'] += 1
+            return None
         if start != b'\x7b':
-            return None  # timeout (empty) or mid-frame byte; resync on next call
-        body = self.ser.read(30)
-        if len(body) < 30:
+            self.stats['desync'] += 1
+            return None  # mid-frame byte; resync on the next call
+
+        marker = self.ser.read(1)
+        if len(marker) < 1:
+            self.stats['short'] += 1
+            return None
+        if marker[0] in REPLY_CODES:
+            self._read_reply(marker[0])
+            return None
+        if marker[0] != 0x00:
+            self.stats['desync'] += 1
+            return None
+
+        body = self.ser.read(29)     # vel(6) imu(20) battery(2) bcc(1)
+        if len(body) < 29:
+            self.stats['short'] += 1
             return None
         end = self.ser.read(1)
         if end != b'\x7d':
+            self.stats['desync'] += 1
             return None
 
-        robot_vel = body[1:7]
-        imu_val = body[7:27]
-        bat = body[27:29]
-        bcc = body[29]
+        robot_vel = body[0:6]
+        imu_val = body[6:26]
+        bat = body[26:28]
+        bcc = body[28]
 
         check = bytearray(b'\x7b\x00') + robot_vel + imu_val + bat
         if self.calculate_bcc(check) != bcc:
+            self.stats['bcc_fail'] += 1
             return None
+        self.stats['good'] += 1
 
         def s16(b):
             return int.from_bytes(b, 'big', signed=True) / 1000.0
@@ -162,6 +292,11 @@ class OminiBotHV:
             'qz': s16(imu_val[18:20]),
             'battery': s16(bat),
         }
+
+    def reset_stats(self):
+        """Zero the link counters, e.g. at the start of each measured phase."""
+        for key in self.stats:
+            self.stats[key] = 0
 
     def close(self):
         try:

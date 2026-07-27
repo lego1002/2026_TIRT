@@ -21,6 +21,7 @@ import rclpy
 from geometry_msgs.msg import Quaternion, Twist, TransformStamped
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
+from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Imu
 from std_msgs.msg import Float32
 from tf2_ros import TransformBroadcaster
@@ -52,7 +53,21 @@ class OminiBotDriver(Node):
         self.declare_parameter('publish_odom_tf', True)
         self.declare_parameter('publish_imu', True)
         self.declare_parameter('cmd_rate', 20.0)       # Hz, command re-send rate
-        self.declare_parameter('cmd_vel_timeout', 0.5)  # s, stop if no cmd_vel
+        # Watchdog window. Raised 0.5 -> 1.0 on 2026-07-27: when /cmd_vel comes from
+        # the laptop over WiFi, an ordinary transport stall of a few hundred ms was
+        # enough to trip the watchdog, zero the base, and then resume -- which is
+        # exactly the "一頓一頓" stutter the operator saw. 1.0 s still stops the robot
+        # promptly if the link genuinely dies. (The structural fix is to run teleop
+        # on the Pi so /cmd_vel never crosses the network at all -- see pi/robot_tmux.sh
+        # and gcs.sh -- but keep this margin for nav2/PC-side publishers.)
+        self.declare_parameter('cmd_vel_timeout', 1.0)  # s, stop if no cmd_vel
+        # /cmd_vel QoS. BEST_EFFORT by default: over lossy WiFi, RELIABLE makes DDS
+        # retransmit *stale* Twists and head-of-line block behind them, so the base
+        # acts on old commands in bursts. A velocity stream is inherently
+        # "latest value wins" -- dropping a sample is strictly better than delaying
+        # every later one. A BEST_EFFORT subscription still matches RELIABLE
+        # publishers, so nothing else breaks. Set false to force RELIABLE.
+        self.declare_parameter('cmd_vel_best_effort', True)
         # Axis signs to reconcile the board's frame with REP-103 (x fwd, y left,
         # z ccw). Applied to BOTH the outgoing command and the odom feedback so
         # they stay consistent. Set to -1.0 to flip an axis (e.g. "forward is
@@ -75,6 +90,21 @@ class OminiBotDriver(Node):
         # be matched to the real N20 motor. See SLAM_learning_note.md §7.
         self.declare_parameter('encoder_ppr', 165)
         self.declare_parameter('gear_ratio', 55)
+        # PWM duty limits written into the board (0x23 config frame; range 1..7199
+        # = 0..100% duty, PDF p.4). The factory 3600/2100 come from the vendor's
+        # own comment "motor range: 3v-6v" -- i.e. they are a protection limit for
+        # 6V motors on a 12V supply (PDF p.23: board default +12V).
+        # THIS ROBOT USES 12V 200rpm N20 MOTORS, so 3600 = 50% duty = 6V caps them
+        # at HALF their rated voltage, which halves available torque. Unloaded
+        # (wheels in the air) the loop never reaches the ceiling and everything
+        # looks perfect; on the floor a wheel that needs more than 6V worth of
+        # torque saturates, falls behind its setpoint, and the four wheels desync.
+        # Raising this toward ~6800 (94%) is within the motors' rating -- but
+        # verify the supply really is 12V first, and raise it gradually.
+        # Not a regression suspect: these values were the same last week when the
+        # chassis drove fine. This is a torque-headroom fix, not the stutter fix.
+        self.declare_parameter('motor_pwm_max', 3600)
+        self.declare_parameter('motor_pwm_min', 2100)
         # Closed-loop PID gains written to the board. Factory-tuned for the
         # CircusPi 1:55 chassis; on a mismatched (lighter) motor these can
         # overshoot/oscillate -- a likely cause of chassis vibration. Exposed so
@@ -162,6 +192,8 @@ class OminiBotDriver(Node):
         axle_space = self.get_parameter('axle_space_mm').value
         encoder_ppr = self.get_parameter('encoder_ppr').value
         gear_ratio = self.get_parameter('gear_ratio').value
+        motor_pwm_max = self.get_parameter('motor_pwm_max').value
+        motor_pwm_min = self.get_parameter('motor_pwm_min').value
         pos_kp = self.get_parameter('pos_kp').value
         pos_ki = self.get_parameter('pos_ki').value
         pos_kd = self.get_parameter('pos_kd').value
@@ -174,10 +206,13 @@ class OminiBotDriver(Node):
             f'(wheel_diameter={wheel_diameter}mm, wheel_space={wheel_space}mm, '
             f'axle_space={axle_space}mm, encoder_ppr={encoder_ppr}, '
             f'gear_ratio={gear_ratio}, pos_pid=({pos_kp},{pos_ki},{pos_kd}), '
-            f'vel_pid=({vel_kp},{vel_ki}))')
+            f'vel_pid=({vel_kp},{vel_ki}), '
+            f'pwm=({motor_pwm_min}..{motor_pwm_max} of 7199))')
         self.bot = OminiBotHV(port=port, baud=baud,
                               motor_direct=motor_direct,
                               encoder_direct=encoder_direct,
+                              motor_pwm_max=motor_pwm_max,
+                              motor_pwm_min=motor_pwm_min,
                               wheel_diameter=wheel_diameter,
                               wheel_space=wheel_space,
                               axle_space=axle_space,
@@ -194,7 +229,17 @@ class OminiBotDriver(Node):
         self._last_odom_time = None
 
         # --- ROS interfaces ---------------------------------------------------
-        self.create_subscription(Twist, 'cmd_vel', self._cmd_cb, 10)
+        # Depth 1: only the newest Twist matters. A deeper queue just means that
+        # after a WiFi stall the base replays a backlog of commands it should have
+        # skipped. See the cmd_vel_best_effort parameter for the reliability choice.
+        cmd_qos = QoSProfile(
+            depth=1,
+            history=HistoryPolicy.KEEP_LAST,
+            reliability=(ReliabilityPolicy.BEST_EFFORT
+                         if self.get_parameter('cmd_vel_best_effort').value
+                         else ReliabilityPolicy.RELIABLE),
+        )
+        self.create_subscription(Twist, 'cmd_vel', self._cmd_cb, cmd_qos)
         self.odom_pub = self.create_publisher(Odometry, 'odom', 20)
         self.imu_pub = self.create_publisher(Imu, 'imu', 20)
         # Battery voltage from the same feedback frame. Published because motor
@@ -209,6 +254,17 @@ class OminiBotDriver(Node):
 
         # Watchdog / command re-send timer (runs in the executor thread).
         self.create_timer(1.0 / cmd_rate, self._send_cmd)
+
+        # Serial link health. The board<->Pi link moved from USB (FTDI) to the
+        # Pi's GPIO UART on 2026-07-19; if noise corrupts a command frame the
+        # board rejects it on checksum, its own watchdog zeros the motors, and
+        # the chassis stutters. read_feedback() cannot surface that on its own --
+        # it returns None for a bad checksum exactly as it does for an idle link.
+        # Logging the counters makes a degrading link visible during real driving
+        # (tools/motor_diag.py needs the driver stopped, so it cannot watch a
+        # teleop run). Silent while the link is clean.
+        self._last_stats = dict(self.bot.stats)
+        self.create_timer(5.0, self._log_link_health)
 
         # Feedback read loop (blocking serial reads -> own thread).
         self._running = True
@@ -236,6 +292,26 @@ class OminiBotDriver(Node):
                                  self.sz * az * self.cmd_ang_scale)
         except Exception as exc:  # noqa: BLE001 - keep node alive on serial hiccup
             self.get_logger().warn(f'robot_speed write failed: {exc}')
+
+    # -- serial link health --------------------------------------------------
+    def _log_link_health(self):
+        now = dict(self.bot.stats)
+        delta = {k: now[k] - self._last_stats.get(k, 0) for k in now}
+        self._last_stats = now
+        bad = delta['bcc_fail'] + delta['desync'] + delta['short']
+        total = bad + delta['good']
+        if total == 0:
+            self.get_logger().warn(
+                'serial link silent: no feedback frames for 5s '
+                '(board powered? MODE_ON? TX/RX swapped?)')
+            return
+        if bad / total > 0.02:
+            self.get_logger().warn(
+                f'serial link degraded: {bad}/{total} bad frames '
+                f'({100.0 * bad / total:.1f}%) in 5s [bcc={delta["bcc_fail"]} '
+                f'desync={delta["desync"]} short={delta["short"]} '
+                f'timeout={delta["timeout"]}] -- corrupted command frames make '
+                'the board stop the motors, which feels like stuttering')
 
     # -- feedback -> odom / imu ---------------------------------------------
     def _read_loop(self):

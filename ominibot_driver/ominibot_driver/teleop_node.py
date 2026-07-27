@@ -33,6 +33,7 @@ import tty
 import rclpy
 from geometry_msgs.msg import Twist
 from rclpy.node import Node
+from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 
 # 3x3 pad -> (x, y) translation direction, REP-103 (x forward, y left).
 MOVE_BINDINGS = {
@@ -77,7 +78,17 @@ class MecanumTeleop(Node):
         self.ang_max = self.get_parameter('angular_max').value
         self.rate = self.get_parameter('publish_rate').value
 
-        self.pub = self.create_publisher(Twist, 'cmd_vel', 10)
+        # BEST_EFFORT depth-1, matching ominibot_driver's cmd_vel subscription. A
+        # teleop stream is "latest value wins": if a sample is lost, the next one is
+        # already on its way (we re-publish every loop), so retransmitting a stale
+        # Twist -- and head-of-line blocking the fresh one behind it -- is strictly
+        # worse. This matters when the link is WiFi; harmless when it is loopback,
+        # which is the normal case now that teleop runs on the Pi itself.
+        self.pub = self.create_publisher(
+            Twist, 'cmd_vel',
+            QoSProfile(depth=1,
+                       history=HistoryPolicy.KEEP_LAST,
+                       reliability=ReliabilityPolicy.BEST_EFFORT))
         self.tx = self.ty = 0.0   # translation direction, in {-1, 0, 1}
         self.tz = 0.0             # rotation direction, in {-1, 0, 1}
 

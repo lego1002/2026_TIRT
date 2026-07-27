@@ -1,0 +1,38 @@
+# TIRT 無線網路設定 —— 複製成 net/60-tirt-wifi.yaml、填好密碼後用
+# net/install_pi_network.sh 安裝到 /etc/netplan/。
+#
+# 檔名 60- 排在 cloud-init 的 50-cloud-init.yaml 之後,netplan 會把同一個 wlan0
+# 區塊合併起來(相同的鍵以後者為準)。
+#
+# 這個檔做兩件事:
+#
+# (1) access-points 一次列出所有會用到的網路,wpa_supplicant 會自動連上「當下在場」
+#     的那一個 —— 這就是「換場地不必手動設定」的機制。
+#     ※ netplan 0.107.1(Ubuntu 22.04)的 access-points 沒有 priority 鍵,所以無法
+#       指定優先序;兩個都在場時由 wpa_supplicant 依訊號強度挑。實務上手機熱點
+#       和實驗室網路不會同時出現,夠用。
+#
+# (2) addresses 掛上固定別名 10.77.0.2/24,和 dhcp4 並存 —— 場地 IP 照拿,
+#     但機器人之間永遠用 10.77.0.2 溝通。理由見 net/tirt_net.conf。
+#
+# 改完務必用 install_pi_network.sh(內含 netplan try,120 秒沒確認就自動回滾),
+# 不要直接 netplan apply:wifi 設定寫錯會當場失去 SSH。
+
+network:
+  version: 2
+  renderer: networkd
+  wifis:
+    wlan0:
+      dhcp4: true
+      # optional: true 讓開機不會卡在等這張網卡(沒有 wifi 也能開機進系統)
+      optional: true
+      addresses:
+        - 10.77.0.2/24
+      access-points:
+        # ---- 比賽當天主力:手機熱點 ----
+        "PHONE_HOTSPOT_SSID":
+          password: "PHONE_HOTSPOT_PASSWORD"
+        # ---- 實驗室 / 宿舍 ----
+        "RMML_2G":
+          password: "RMML_2G_PASSWORD"
+        # 要再加場地就照樣往下複製一組即可,不需要改其他任何檔案。
