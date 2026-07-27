@@ -50,6 +50,28 @@ if tmux has-session -t "$SESSION" 2>/dev/null; then
     exec tmux attach -t "$SESSION"
 fi
 
+# --- 0. 前置檢查:PC 端套件有沒有 build 到最新 -----------------------------
+# ROS 的 setup.bash 在 `set -u` 下會踩到未定義變數而中斷,所以只在這段關掉。
+set +u
+source /opt/ros/humble/setup.bash
+[ -f "$HOME/ros2_ws/install/setup.bash" ] && source "$HOME/ros2_ws/install/setup.bash"
+set -u
+
+if ! _prefix="$(ros2 pkg prefix car_assemble_description 2>/dev/null)"; then
+    echo "gcs: 找不到 car_assemble_description —— PC 端還沒 build。" >&2
+    echo "     cd ~/ros2_ws && colcon build --packages-select car_assemble_description --symlink-install" >&2
+    exit 1
+fi
+# 「pull 了但沒重 build」是最容易踩、又最難看出來的狀況:launch 檔跑的是安裝過的舊副本,
+# RViz 就只是安靜地不出現,畫面上沒有任何錯誤可看。這裡直接把它講清楚。
+_installed_launch="$_prefix/share/car_assemble_description/launch/slam_pc.launch.py"
+if [ "$USE_RVIZ" = 1 ] && ! grep -q 'use_rviz' "$_installed_launch" 2>/dev/null; then
+    echo "gcs: 警告 —— 安裝的 slam_pc.launch.py 是舊版(沒有 use_rviz),RViz 不會自己出來。" >&2
+    echo "     修法:cd ~/ros2_ws && colcon build --packages-select car_assemble_description --symlink-install" >&2
+    echo "     然後在 slam 視窗 Ctrl-c、按 ↑ Enter 重跑即可(不必整套重開)。" >&2
+    echo >&2
+fi
+
 # --- 1. 本機 DDS ----------------------------------------------------------
 source "$_here/dds/setup_dds.sh"
 if [ -z "${FASTRTPS_DEFAULT_PROFILES_FILE:-}" ]; then
