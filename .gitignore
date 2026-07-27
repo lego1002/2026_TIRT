@@ -17,3 +17,6 @@ __pycache__/
 # 真正的 netplan 檔含 WiFi 密碼,不進版控;只追蹤 net/60-tirt-wifi.yaml.example
 /net/60-tirt-wifi.yaml
 /net/*.yaml.bak.*
+
+/maps
+/OminiBotHV-master
