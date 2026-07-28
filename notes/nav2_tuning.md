@@ -100,14 +100,46 @@ ros2 topic echo /cmd_vel_nav --once      # DWB 的原始輸出
 
 | 參數 | 目前 | 意義 |
 | --- | --- | --- |
-| `robot_radius` | 0.11 | 車體圓形半徑。障礙物 0.11 m 內 = 內切致命區，planner 不會讓車心進去 |
+| `robot_radius` | **0.09** | 車體圓形半徑。障礙物這個距離內 = 內切致命區（代價 253），planner 直接當成牆 |
 | `inflation_radius` | 0.18 | 代價膨脹範圍。比 `robot_radius` 大的那一段是「可以進但不鼓勵」的緩衝 |
 | `cost_scaling_factor` | 5.0 | 代價衰減陡度。越大 → 離牆一點點就變便宜 → 越敢貼牆走 |
 
-走道寬 W 時，車心可走的自由帶 ≈ `W - 2 × robot_radius`。走道 0.5 m → 0.28 m（夠）；0.4 m → 0.18 m（很擠）。
+走道寬 W 時，車心可走的自由帶 ≈ `W - 2 × robot_radius`。
 
-**找不到路的調整順序**：`inflation_radius` 0.18 → 0.13 → 再考慮 `robot_radius` 0.11 → 0.09。
-`robot_radius` 是安全邊界，最後才動。
+### 不要猜，量它：`python3 tools/costmap_check.py`
+
+**2026-07-28 這個參數害整套走不了一次，值得記住。** 原本設 `robot_radius: 0.11`（幾何上正確：車體
+0.16×0.14 m，對角半徑 0.108），結果 goal 一送出去就 aborted、車完全不動、而 nav2 閒置時**不噴任何警告**。
+在 `201_self_test` 上量出來的連通性斷崖極陡：
+
+| `robot_radius` | 最大連通區 |
+| --- | --- |
+| 0.12 | 3.74 m² |
+| **0.11** | **4.07 m²** ← 原設定：地圖被切成互不相通的小塊 |
+| 0.10 | 39.10 m² ← 整張圖連通 |
+| 0.09 | 39.10 m² |
+
+差 1 cm，可走面積差 10 倍。所以現在設 0.09。**代價**：0.09 小於真實對角半徑 0.108，車角可能擦牆約
+1.8 cm —— 但 0.11 的替代方案不是「比較安全」而是「完全不能導航」。真的常擦牆，正解是改用矩形
+`footprint`（見 `config/nav2_params.yaml` 該處註解），不是把半徑調回去。
+
+**找不到路的調整順序**：先 `python3 tools/costmap_check.py` 看斷崖在哪，再降 `robot_radius`；
+`inflation_radius` 只是梯度，不會造成「不通」，不必先動它。
+
+### 讀 costmap 數值的陷阱
+
+`/global_costmap/costmap` 這個 topic 上的 `OccupancyGrid` 是**重新縮放成 0..100** 的版本，不是內部的
+raw 0..255 代價。對照表：
+
+| 發布值 | raw | 意義 |
+| --- | --- | --- |
+| 100 | 254 | `LETHAL_OBSTACLE` |
+| **99** | **253** | `INSCRIBED_INFLATED_OBSTACLE` — **planner 視為不可走** |
+| 1..98 | 1..252 | inflation 梯度，可走但不鼓勵 |
+| 0 | 0 | 完全空 |
+| -1 | 255 | `NO_INFORMATION`；`allow_unknown: false` 時也不可走 |
+
+拿 253/254 去比對這張圖永遠不會命中，會得到「整張地圖都是空的」的錯誤結論（我第一次就是這樣誤判的）。
 
 另外兩個會造成「找不到路」的：
 
@@ -233,6 +265,7 @@ RViz 裡最有用的三個 display（`rviz/view_nav2.rviz` 都已經開好）：
 
 | 症狀 | 先看 |
 | --- | --- |
+| **goal 一送就 aborted、車完全不動、閒置時毫無警告** | **`python3 tools/costmap_check.py`**。最常見的是車停得離牆太近 → 所在格是 INSCRIBED → 連「起點」都不合法，planner 根本不會開始規劃。其次是 `robot_radius` 太大把走道封死（§3） |
 | 完全不動、也沒報錯 | Pi 上的 teleop 還在跑嗎（`./robotctl down teleop`）？它閒著會以 20Hz 發零速度 |
 | 車體模型不見 | `/robot_description` 是 latched，RViz 的 durability 要 Transient Local |
 | 一頓一頓 | `tools/cmd_vel_check.py` 看 watchdog 逾時次數；不是網路就換 `tools/motor_diag.py` |

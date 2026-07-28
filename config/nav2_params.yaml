@@ -9,7 +9,7 @@
 #   2. base_frame 是 base_link,不是 base_footprint(這台 URDF 沒有 base_footprint)。
 #   3. 全部改成 holonomic:AMCL 用 OmniMotionModel、controller 用 MPPI 的 Omni
 #      motion model、y 方向速度不再是 0 —— 麥克納姆會橫移,不用它等於白裝。
-#   4. 尺寸全部縮小一個級別:robot_radius 0.22→0.11、inflation 0.55→0.18、
+#   4. 尺寸全部縮小一個級別:robot_radius 0.22→0.09、inflation 0.55→0.18、
 #      goal tolerance 0.25→0.10。原版的數字是給 0.3m 車在空曠房間跑的,直接套到
 #      迷宮上會讓整條走道都變成致命代價區,planner 會直接說「找不到路」。
 
@@ -93,13 +93,33 @@ map_server:
 # ---------------------------------------------------------------------------
 # Costmap:整份設定裡最容易讓「planner 找不到路」的地方就是這裡的尺寸。
 #
-# 車體實測約 0.16(左右)× 0.14(前後)m,對角半徑 ≈ 0.108 → robot_radius 0.11。
-# 麥克納姆可以原地自轉,所以用圓形 footprint 是對的(不需要 footprint 多邊形)。
+# 車體實測約 0.16(左右)× 0.14(前後)m,對角半徑 ≈ 0.108。
 #
-# inflation_radius 0.18 的算法:走道寬 W 時,牆兩側各有 robot_radius=0.11 的
+# ★ robot_radius 用 0.09,不是幾何上「正確」的 0.11(2026-07-28 實機量測後改)。
+#   0.11 的實際後果是**整個迷宮走不了**:車體半徑決定 costmap 的 inscribed 帶
+#   (代價 253,planner 直接當成牆),0.11 會讓 201 迷宮的走道兩側 inscribed 帶接起來
+#   → 地圖被切成互不相通的小塊。用 tools/costmap_check.py 在 201_self_test 上量到的
+#   斷崖非常陡:
+#       robot_radius 0.12 → 最大連通區  3.74 m²
+#       robot_radius 0.11 → 最大連通區  4.07 m²   ← 原本的設定,走不出去
+#       robot_radius 0.10 → 最大連通區 39.10 m²   ← 整張圖連通
+#       robot_radius 0.09 → 最大連通區 39.10 m²
+#   斷崖在 0.11 與 0.10 之間(地圖 0.05m 一格,所以 0.10 以下都等價),取 0.09 留餘裕。
+#
+#   代價要講清楚:0.09 比真實對角半徑 0.108 小,所以**車角有可能擦到牆** ——
+#   planner 認為過得去的縫,實際上四個角會超出去約 1.8cm。這是刻意的取捨:0.11
+#   的替代方案不是「比較安全」,而是「完全不能導航」。真的常擦牆的話,正解不是把
+#   robot_radius 調回去,而是改用矩形 footprint(把 robot_radius 換成
+#   footprint: "[[0.072,0.08],[0.072,-0.08],[-0.072,-0.08],[-0.072,0.08]]"),
+#   那樣 inscribed 半徑會變成 0.072(短邊),既精確又過得去 —— 但 NavFn 是 2D 網格
+#   planner,不考慮車體朝向,實際避障還是靠 controller,所以先用簡單的圓形
+#   (麥克納姆可以原地自轉,圓形本來就是合理的近似)。
+#
+# inflation_radius 0.18 的算法:走道寬 W 時,牆兩側各有 robot_radius=0.09 的
 # 「內切致命區」,車心可走的自由帶寬度 = W - 0.22。走道 0.5m → 剩 0.28m,夠過;
 # 走道 0.4m → 剩 0.18m,很擠但過得去。如果 planner 一直說 no path,先把
-# inflation_radius 降到 0.13、再考慮把 robot_radius 降到 0.09,不要先去動 planner。
+# inflation_radius 降到 0.13、再往下調 robot_radius,不要先去動 planner。
+# 判斷不要靠猜:python3 tools/costmap_check.py 會直接把連通性斷崖印出來。
 # ---------------------------------------------------------------------------
 local_costmap:
   local_costmap:
@@ -116,7 +136,7 @@ local_costmap:
       width: 3
       height: 3
       resolution: 0.05           # 和地圖同解析度
-      robot_radius: 0.11
+      robot_radius: 0.09
       # 原版用 voxel_layer(3D 體素),但我們只有一顆 2D 光達,ObstacleLayer 就夠,
       # 而且便宜很多。
       plugins: ["obstacle_layer", "inflation_layer"]
@@ -150,7 +170,7 @@ global_costmap:
       global_frame: map
       robot_base_frame: base_link
       resolution: 0.05
-      robot_radius: 0.11
+      robot_radius: 0.09
       track_unknown_space: true    # 迷宮裡「沒掃到」不等於「可以走」
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
       static_layer:

@@ -281,6 +281,15 @@ human-editable text.
   readback). Run it **twice** (`--label air`, then `--label floor`); a single run proves nothing,
   the air↔floor difference is the diagnosis. Interpretation is built into its output. It needs the
   driver stopped (`pkill -f ominibot_driver`) since the port is exclusive.
+  `costmap_check.py` is the first thing to run when **a Nav2 goal aborts instantly with the robot not moving
+  and no warnings while idle** (2026-07-28). It reports whether the robot's own cell is planner-passable,
+  what fraction of the map is reachable from it, and — by re-inflating the raw `/map` at a range of radii —
+  what `robot_radius` this maze actually tolerates. It found the real fault the first time it ran: at
+  `robot_radius: 0.11` the largest connected region was 4.07 m², versus 39.10 m² at 0.10, so there was no
+  legal *start* pose and planning never began. Read-only; commands no motion. Its header also documents the
+  scaling trap that made this hard to see: `/global_costmap/costmap` is republished **rescaled to 0..100**
+  (99 = raw 253 `INSCRIBED_INFLATED_OBSTACLE`, -1 = unknown), so comparing against 253/254 never matches and
+  makes a fully-walled map look completely empty.
   `cmd_vel_check.py` is the **network-side** counterpart to `motor_diag.py` (2026-07-27): run it on the
   Pi while driving and it reports the `/cmd_vel` inter-arrival p50/p95/p99/max and, crucially, **how many
   gaps exceeded `cmd_vel_timeout`** — each one is a watchdog trip that zeroes the base, which is what
