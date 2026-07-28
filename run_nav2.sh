@@ -23,6 +23,26 @@
 set -e
 _here="$( cd "$( dirname "${BASH_SOURCE[0]:-$0}" )" && pwd )"
 
+# 旗標一律擋掉。這支的第一個裸參數是「地圖名」,所以 `--nav` 不擋的話會被當成地圖名,
+# 然後得到一句「找不到地圖 maps/--nav.yaml」—— 對的錯誤,但答錯了問題。
+for _a in "$@"; do
+    case "$_a" in
+        -h|--help)
+            # 用法直接取自檔頭註解(從第 2 行起,遇到第一行非註解就停),不必兩處維護。
+            awk 'NR>1 { if (/^#/) { sub(/^# ?/, ""); print } else { exit } }' "$0"; exit 0 ;;
+        --nav)
+            echo "run_nav2: 這支本身就是導航,不用再加 --nav(那是筆電端 ./gcs.sh 的旗標)。" >&2
+            echo "          地圖直接用裸名字帶:./run_nav2.sh 201_self_test" >&2
+            exit 1 ;;
+        --no-rviz)
+            echo "run_nav2: 這支的關 RViz 寫法是 launch 參數:./run_nav2.sh 201_self_test use_rviz:=false" >&2
+            exit 1 ;;
+        -*)
+            echo "run_nav2: 不認識的旗標「$_a」。用法:./run_nav2.sh [地圖名] [k:=v ...]" >&2
+            exit 1 ;;
+    esac
+done
+
 source /opt/ros/humble/setup.bash
 if [ -f "$HOME/ros2_ws/install/setup.bash" ]; then source "$HOME/ros2_ws/install/setup.bash"; fi
 
@@ -101,7 +121,7 @@ if command -v ros2 >/dev/null 2>&1; then
     fi
 fi
 
-# 3) Pi 上的鍵盤 teleop。這裡只提醒、不代勞 —— 遠端關別人的東西應該是操作者自己
+# 4) Pi 上的鍵盤 teleop。這裡只提醒、不代勞 —— 遠端關別人的東西應該是操作者自己
 #    按的。刻意不做自動偵測:那要多一次 ssh + ros2 topic list,每次啟動白等 10 秒,
 #    而這行提醒本來就該每次看一眼。
 echo

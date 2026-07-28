@@ -14,6 +14,27 @@
 set -e
 _here="$( cd "$( dirname "${BASH_SOURCE[0]:-$0}" )" && pwd )"
 
+# 參數會直接交給 ros2 launch,旗標會變成看不懂的 ros2 usage dump。先擋掉。
+for _a in "$@"; do
+    case "$_a" in
+        -h|--help)
+            # 用法直接取自檔頭註解(從第 2 行起,遇到第一行非註解就停),不必兩處維護。
+            awk 'NR>1 { if (/^#/) { sub(/^# ?/, ""); print } else { exit } }' "$0"; exit 0 ;;
+        --nav)
+            echo "run_slam: 「--nav」是筆電端 ./gcs.sh 的旗標。這支是「建圖」,和導航是二選一。" >&2
+            echo "          要跑導航:./gcs.sh --down 然後 ./gcs.sh --nav(或單獨跑 ./run_nav2.sh)" >&2
+            exit 1 ;;
+        --no-rviz)
+            echo "run_slam: 這支的關 RViz 寫法是 launch 參數:./run_slam.sh use_rviz:=false" >&2
+            echo "          (--no-rviz 是 ./gcs.sh 的旗標)" >&2
+            exit 1 ;;
+        -*)
+            echo "run_slam: 不認識的旗標「$_a」。這支只吃 slam_pc.launch.py 的 k:=v 參數," >&2
+            echo "          例如 use_rviz:=false、slam_params_file:=/路徑/xxx.yaml。" >&2
+            exit 1 ;;
+    esac
+done
+
 source /opt/ros/humble/setup.bash
 if [ -f "$HOME/ros2_ws/install/setup.bash" ]; then source "$HOME/ros2_ws/install/setup.bash"; fi
 

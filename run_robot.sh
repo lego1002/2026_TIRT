@@ -18,6 +18,26 @@
 set -e
 _here="$( cd "$( dirname "${BASH_SOURCE[0]:-$0}" )" && pwd )"
 
+# 這支的參數會原封不動交給 ros2 launch,所以旗標形式的東西一律會變成 ros2 自己的
+# usage dump("unrecognized arguments: --nav"),完全看不出來錯在哪。在這裡先擋掉並
+# 講清楚 —— 尤其 --nav 很容易被誤以為是全域旗標,它其實是筆電端 gcs.sh 的。
+for _a in "$@"; do
+    case "$_a" in
+        -h|--help)
+            # 用法直接取自檔頭註解(從第 2 行起,遇到第一行非註解就停),不必兩處維護。
+            awk 'NR>1 { if (/^#/) { sub(/^# ?/, ""); print } else { exit } }' "$0"; exit 0 ;;
+        --nav|--no-rviz|--down)
+            echo "run_robot: 「$_a」是筆電端 ./gcs.sh 的旗標,不是 bringup 參數。" >&2
+            echo "           這支是 Pi 端 bringup(真底盤 + 光達 + TF),Nav2 和 SLAM 都跑在 PC。" >&2
+            echo "           要跑導航請回到**筆電**:./gcs.sh --down 然後 ./gcs.sh --nav" >&2
+            exit 1 ;;
+        -*)
+            echo "run_robot: 不認識的旗標「$_a」。這支只吃 robot_bringup.launch.py 的 k:=v 參數," >&2
+            echo "           例如 use_fake_odom:=true、use_slam:=true、ominibot_port:=/dev/serial0。" >&2
+            exit 1 ;;
+    esac
+done
+
 source /opt/ros/humble/setup.bash
 if [ -f "$HOME/ros2_ws/install/setup.bash" ]; then source "$HOME/ros2_ws/install/setup.bash"; fi
 source "$_here/dds/setup_dds.sh"
