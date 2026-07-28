@@ -234,15 +234,31 @@ nav.goToPose(pose)          # 然後 while not nav.isTaskComplete(): ...
 | 參數 | 目前 | 什麼時候調 |
 | --- | --- | --- |
 | `alpha1..alpha5` | 0.3 / 0.3 / 0.3 / 0.3 / 0.2 | odom 雜訊模型。粒子雲太緊、修不動 → 調大；抖動亂飄 → 調小 |
-| `update_min_d` / `update_min_a` | 0.10 / 0.15 | 走多遠 / 轉多少才做一次更新。跑快了可以維持，CPU 吃緊才放大 |
+| `update_min_d` / `update_min_a` | **0.05 / 0.05** | 走多遠 / 轉多少才做一次濾波更新。**沒達到門檻時 AMCL 完全不修正**，所以兩次更新之間的誤差會累積到接近門檻值 |
 | `max_beams` | 120 | 每次匹配用幾條光束。房間小、牆多所以給得比原版 60 多 |
 | `transform_tolerance` | 1.0 | 跨 WiFi 的 TF 容忍，**不要降**（見 `0721_net_issue_plan.md`） |
 | `set_initial_pose` / `initial_pose` | true / (0,0,0) | 只有「車放回建圖起跑點」時才正確；放別處要在 RViz 點 2D Pose Estimate |
 | `robot_model_type` | `nav2_amcl::OmniMotionModel` | **不要改回 Differential**，那會把橫移當成不可能的運動 |
 
+### 點雲和地圖疊不起來 → `python3 tools/scan_match_check.py`
+
+不要用眼睛判斷歪多少。這支把 `/scan` 用當前 TF 打到 map 座標，算平均離牆距離，再暴搜附近的
+`(dx, dy, dyaw)` 找最合的位姿。三種結論它會直接講：**定位收斂錯了**（有明顯更好的位姿 → 地圖沒問題）、
+**已經對得夠好**、或 **地圖和現場不符**（連最佳位姿都爛 → 要重建圖或查外參）。
+
+**2026-07-28 實測的坑：不能只看平均離牆距離的絕對值。** 窄迷宮裡大多數光點打在 0.2–0.5 m 的近牆上，
+角度誤差在近處只造成一兩格偏移，平均值被近點稀釋 —— 實測 8–10° 的航向誤差平均分數只有 0.039 m
+（小於一格 0.05 m），看起來「還不錯」，但同樣的 8° 在 3 m 遠處是 `3·sin8° ≈ 0.42 m`。
+**近牆貼合、遠牆整片歪掉**就是這個成因，所以判斷要看「有沒有明顯更好的位姿」而不是絕對分數。
+
+那次量到的是純旋轉誤差（`dx=dy=0`、`dyaw=+8~10°`），而 `update_min_a` 當時正是 0.15 rad ≈ 8.6° ——
+誤差量級和更新門檻一樣大並非巧合，因此把 `update_min_d`/`update_min_a` 降到 0.05/0.05。
+
 定位飄掉時，先確認不是**里程計或光達外參**的問題（那是上游，AMCL 再怎麼調都救不了）：
 `laser_x` / `laser_y` / `laser_yaw`、`odom_linear_scale`、`gyro_scale` 的校正程序在
 `notes/SLAM_learning_note.md` §7，工具是 `tools/odom_check.py` 和 `tools/analyze_bag.py`。
+順便記一筆已經排除的嫌疑：靜止時 `odom->base_link` 的航向漂移實測只有 **−0.1°/分**，
+所以陀螺零偏不是這次的原因（曾經懷疑過）。
 
 ---
 
@@ -269,7 +285,7 @@ RViz 裡最有用的三個 display（`rviz/view_nav2.rviz` 都已經開好）：
 | 完全不動、也沒報錯 | Pi 上的 teleop 還在跑嗎（`./robotctl down teleop`）？它閒著會以 20Hz 發零速度 |
 | 車體模型不見 | `/robot_description` 是 latched，RViz 的 durability 要 Transient Local |
 | 一頓一頓 | `tools/cmd_vel_check.py` 看 watchdog 逾時次數；不是網路就換 `tools/motor_diag.py` |
-| 地圖和光達對不上 | 定位問題（§7），不是導航問題 |
+| 地圖和光達對不上 | `python3 tools/scan_match_check.py`（§7），這是定位問題，不是導航問題 |
 | 「no valid trajectories」 | §2a 的 `min_speed_*` 太高，或 §3 的膨脹把走道封死了 |
 | 定位莫名其妙地爛，但完全沒有錯誤訊息 | **另一台機器上還開著 `run_slam.sh`。** DDS 是跨機的：它的即時 `/map` 會和 `map_server` 的存檔地圖同時餵給 AMCL，兩邊還都在發 `map->odom`。`run_nav2.sh` 現在會在啟動前檢查並警告 |
 | 啟動後很久都沒有任何 log | 有殘留的 `nav2_container` 孤兒在吃 CPU。它**不理 SIGTERM**，要 `pkill -9 -f "component_container_isolated.*nav2_container"` |

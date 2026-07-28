@@ -290,6 +290,15 @@ human-editable text.
   scaling trap that made this hard to see: `/global_costmap/costmap` is republished **rescaled to 0..100**
   (99 = raw 253 `INSCRIBED_INFLATED_OBSTACLE`, -1 = unknown), so comparing against 253/254 never matches and
   makes a fully-walled map look completely empty.
+  `scan_match_check.py` answers "**the laser scan doesn't line up with the map**" with numbers (2026-07-28):
+  it projects `/scan` into `map` using the current TF, scores the mean distance to the nearest wall, then
+  brute-forces `(dx, dy, dyaw)` nearby to find the best-fitting pose. A clearly better pose existing means
+  localization is off and the map is fine; no better pose means the map disagrees with reality. Read-only.
+  **Its key lesson: do not judge by the absolute mean-distance score.** In a tight maze most returns are on
+  walls 0.2–0.5 m away, where an angular error is only a cell or two, so the mean is diluted — a measured
+  8–10° heading error scored 0.039 m, *under* the 0.05 m cell size and easy to call "fine" (the tool's own
+  first verdict did exactly that and had to be fixed). The same 8° is `3·sin8° ≈ 0.42 m` at 3 m, which is why
+  near walls look aligned while far walls are visibly rotated. Judge by whether a better pose exists.
   `cmd_vel_check.py` is the **network-side** counterpart to `motor_diag.py` (2026-07-27): run it on the
   Pi while driving and it reports the `/cmd_vel` inter-arrival p50/p95/p99/max and, crucially, **how many
   gaps exceeded `cmd_vel_timeout`** — each one is a watchdog trip that zeroes the base, which is what
