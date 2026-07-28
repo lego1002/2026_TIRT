@@ -69,10 +69,39 @@ case "$map_arg" in
 esac
 map_file="$(cd "$(dirname "$map_file")" && pwd)/$(basename "$map_file")"   # → 絕對路徑
 
+# 本機沒這張圖時,自動去 Pi 上找一份回來。
+#
+# 為什麼需要這段:`/maps` 在 .gitignore 裡,所以地圖**不會**跟著 git 同步;而
+# save_map.sh 存在「你執行它的那台機器」。實際流程是「在 Pi 上存圖 → 在 PC 上跑
+# Nav2」,而 map_server 跑在 PC —— 兩邊的 maps/ 內容天生就不一樣。2026-07-28 就是
+# 這樣卡住的:Pi 上有 201_self_test,PC 上只有另一張,run_nav2.sh 直接說找不到。
+#
+# 只在「本機缺這個檔」時才複製,所以不可能蓋掉本機任何東西;對 Pi 是唯讀。
+if [ ! -f "$map_file" ] && [ -f "$_here/net/tirt_net.conf" ]; then
+    source "$_here/net/tirt_net.conf"
+    # 自己就是 Pi 的話不用抓(在 Pi 上單機除錯時會走到這裡)。
+    if ! ip -4 -o addr show scope global 2>/dev/null | grep -q " ${TIRT_PI_IP}/"; then
+        _base="$(basename "$map_file" .yaml)"
+        _pi="${TIRT_SSH_USER}@${TIRT_PI_IP}"
+        echo "run_nav2: 本機沒有 ${_base},試著從 Pi(${TIRT_PI_IP})複製一份..."
+        mkdir -p "$_here/maps"
+        if scp -o ConnectTimeout=5 -o BatchMode=yes -q \
+               "${_pi}:${TIRT_PI_REPO}/maps/${_base}.yaml" \
+               "${_pi}:${TIRT_PI_REPO}/maps/${_base}.pgm" \
+               "$_here/maps/" 2>/dev/null; then
+            echo "run_nav2: 已複製 ${_base}.yaml + .pgm 到 maps/"
+        else
+            echo "run_nav2: 從 Pi 複製失敗(Pi 上可能也沒有這張圖,或 ssh 不通)。" >&2
+            echo "          Pi 上有哪些圖:ssh ${_pi} 'ls ~/2026_TIRT/maps/*.yaml'" >&2
+        fi
+    fi
+fi
+
 if [ ! -f "$map_file" ]; then
     echo "run_nav2: 找不到地圖 $map_file" >&2
-    echo "現有的地圖:" >&2
-    ls -1 "$_here/maps/"*.yaml 2>/dev/null | xargs -r -n1 basename >&2
+    echo "本機現有的地圖:" >&2
+    ls -1 "$_here/maps/"*.yaml 2>/dev/null | xargs -r -n1 basename >&2 || echo "  (maps/ 是空的)" >&2
+    echo "注意 /maps 有進 .gitignore,git pull 不會帶地圖過來;在哪台機器存的圖就只在那台。" >&2
     exit 1
 fi
 

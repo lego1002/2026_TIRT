@@ -258,6 +258,13 @@ human-editable text.
   per-session decision; run it in `gcs.sh`'s `shell` window, or standalone.
 - `maps/` — saved SLAM maps (`.pgm` + `.yaml` pairs) produced by `save_map.sh`, and consumed by
   `run_nav2.sh` / Nav2's `map_server`. `201_self_test` (2026-07-28) is 168×104 cells @ 0.05 m = 8.4 × 5.2 m.
+  **`/maps` is gitignored, so maps do not sync between the two machines, and the two directories genuinely
+  hold different files.** `save_map.sh` writes to whichever machine you run it on, and the natural workflow —
+  save from the Pi, navigate from the PC — puts the map on the wrong one, since `map_server` runs on the PC.
+  Hit on 2026-07-28: `run_nav2.sh` reported the map missing on the laptop while it existed on the Pi. It now
+  **auto-copies a missing map from the Pi over scp** (only when absent locally, so it can never clobber
+  anything; read-only on the Pi; skipped when the local machine holds the Pi's alias IP). If that fails the
+  error explicitly says maps are gitignored, so `git pull` will not bring one over.
 - `tools/` — standalone diagnostic scripts (plain `python3 foo.py`, no colcon package, no rebuild).
   `odom_check.py` prints live cumulative displacement/heading from `/odom` in metres and **degrees**
   (far more readable than echoing quaternions) and, on Ctrl-C, computes the `odom_linear_scale` /
