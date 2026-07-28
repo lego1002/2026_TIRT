@@ -387,14 +387,30 @@ needing `DDS_SERVER=<pi_ip>` looked up by hand) is gone — read this section, n
 ### The one command
 
 ```bash
-./gcs.sh                       # laptop, repo root. That's the whole startup.
+./gcs.sh                       # laptop, repo root. Mapping mode — the whole startup.
 ./gcs.sh use_fake_odom:=true   # any robot_bringup.launch.py arg passes through to the Pi
-./gcs.sh --down                # shut everything down, both machines
+./gcs.sh --nav                 # NAVIGATION mode: Nav2 on maps/201_self_test.yaml
+./gcs.sh --nav maze_01         # ...or maps/maze_01.yaml
+./gcs.sh --down                # shut everything down, both machines (either mode)
 ```
 
 `gcs.sh` sources the local DDS profile, calls `robotctl up` to start the Pi over ssh, opens a laptop tmux
 session (`robot` = live Pi output + keyboard teleop, `slam` = `run_slam.sh`, `shell` = scratch, with
 `Ctrl-b m` bound to save a timestamped map), and launches RViz detached as a GUI window.
+
+**`--nav` (added 2026-07-28) is a *mode*, not an addition** — it replaces the `slam` window with a `nav`
+window running `run_nav2.sh`, because SLAM and Nav2's AMCL both publish `map->odom` and slam_toolbox's live
+`/map` fights `map_server`'s saved one. It also **omits `teleop` from `robotctl up` and shuts a running one
+down**, since `teleop_node` streams zeros at 20 Hz to feed the driver watchdog and would fight Nav2 for
+`/cmd_vel`; to intervene by hand mid-run, `./robotctl up teleop` and remember to take it back down. Switching
+modes means `./gcs.sh --down` then `./gcs.sh --nav` (there is deliberately no in-place switch — a half-torn-down
+stack is exactly how you get two `map->odom` publishers). Bare non-`k:=v` arguments are read as a map name and
+rejected unless `--nav` is present, so `./gcs.sh 201_self_test` gives a usage error instead of silently
+forwarding a bogus bringup arg to the Pi. `--nav` also pre-flights the PC: it aborts with the exact
+`colcon build` line if the installed package share is missing `launch/nav2_pc.launch.py`,
+`config/nav2_params.yaml` or `rviz/view_nav2.rviz`, and with the `apt install` line if `nav2_bringup` is
+absent. That check exists because the 2026-07-28 config move changed `CMakeLists.txt`, which — unlike ordinary
+`launch/`/`config/` edits under `--symlink-install` — **does** require a rebuild on each machine.
 
 ### Pi side: a tmux session, not a service
 
@@ -461,8 +477,10 @@ Pi-only. Each aborts if `dds/setup_dds.sh` didn't configure a profile.
 
 ### Autonomous navigation (Nav2) — the other PC-side mode
 
-`./run_nav2.sh [map] [launch args…]` (PC side; default map `201_self_test`, bare names resolve under `maps/`)
-is the **alternative to `./run_slam.sh`**, not an addition to it: SLAM builds a map, Nav2 drives on a finished
+Normal entry point is **`./gcs.sh --nav`** (see "The one command"), which wires up the Pi, drops teleop, and
+runs the script below in a tmux window. `./run_nav2.sh [map] [launch args…]` (PC side; default map
+`201_self_test`, bare names resolve under `maps/`) still works standalone and is the **alternative to
+`./run_slam.sh`**, not an addition to it: SLAM builds a map, Nav2 drives on a finished
 one, and both publish `map->odom`, so the script pkills a stale `async_slam_toolbox_node` (and a stale
 `nav2_container`) before starting. Needs `ros-humble-navigation2` + `ros-humble-nav2-bringup` on the PC on top
 of the usual `car_assemble_description` build. Operating it: RViz comes up with `rviz/view_nav2.rviz`; if the
