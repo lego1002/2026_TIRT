@@ -18,5 +18,7 @@ __pycache__/
 /net/60-tirt-wifi.yaml
 /net/*.yaml.bak.*
 
-/maps
+# 地圖進版控(2026-07-28 改):/maps 原本被忽略,結果兩台機器的 maps/ 內容不同,
+# 而「在 Pi 建圖、在 PC 導航」必然把圖存到錯的那一台。.pgm 是二進位但很小
+# (168x104 的圖約 17KB),值得換取兩台同步 + 比賽用定版地圖有備份。
 /OminiBotHV-master
