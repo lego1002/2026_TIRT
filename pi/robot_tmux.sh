@@ -42,6 +42,30 @@ win_cmd() {
 
 die() { echo "robot_tmux: $*" >&2; exit 1; }
 
+# $ARGS_FILE 是**持久**檔,所以裡面一個壞值會污染之後每一次啟動,而症狀會出現在離
+# 原因非常遠的地方。2026-07-28 實際發生過:舊版 gcs.sh 把自己的 `--nav` 旗標當成
+# bringup 參數寫了進來,從此 bringup 視窗跑的是 `run_robot.sh --nav` → 立刻失敗 →
+# 機器人根本沒起來,而操作者在筆電上看到的症狀是「RViz 沒開」。從那裡查回這個檔案
+# 要繞非常大一圈,所以寧可在啟動前就把話講死。
+# (筆電端 robotctl args 也有同一道檢查;這裡是第二道 —— 舊版 robotctl 寫進來的值
+#  擋不住,而這個檔案本來就可能被手動編輯。)
+validate_args_file() {
+    [ -f "$ARGS_FILE" ] || return 0
+    local a bad=""
+    for a in $(cat "$ARGS_FILE" 2>/dev/null); do
+        case "$a" in
+            *:=*) ;;
+            *) bad="$bad $a" ;;
+        esac
+    done
+    [ -z "$bad" ] && return 0
+    echo "robot_tmux: $ARGS_FILE 裡有不是 k:=v 形式的東西:$bad" >&2
+    echo "            bringup 只吃 robot_bringup.launch.py 的參數(例 use_fake_odom:=true)。" >&2
+    echo "            旗標(--nav / --no-rviz / --down)是筆電端 gcs.sh 的,不該進這個檔案。" >&2
+    echo "            清掉:筆電上 ./robotctl args --clear   或 Pi 上 rm $ARGS_FILE" >&2
+    return 1
+}
+
 command -v tmux >/dev/null || die "Pi 上沒裝 tmux:sudo apt install tmux"
 
 write_rc() {
@@ -160,6 +184,7 @@ stop_win() {
 }
 
 cmd_up() {
+    validate_args_file || exit 1
     wait_for_alias || exit 1
     ensure_session
     local list=("$@")
@@ -185,7 +210,10 @@ cmd_down() {
         tmux kill-session -t "$S"
         echo "robot_tmux: 已關閉整個 session '$S'"
         # tmux kill 不保證子孫行程都收掉;底盤的 UART 被卡住會讓下次啟動讀到亂碼。
-        pkill -f "robot_bringup.launch|ominibot_driver_node|sllidar_node|mecanum_teleop" 2>/dev/null
+        # pattern 帶前綴對可執行檔路徑,不用裸節點名 —— 裸名字會連「只是提到它」的
+        # 行程一起殺(grep / tail / 編輯器都算),見 run_robot.sh 同處的註解。
+        # teleop 要兩種寫法:它同時有 `ros2 run ...` 包裝行程和真正的執行檔。
+        pkill -f "robot_bringup\.launch\.py|/ominibot_driver_node|/sllidar_node|/mecanum_teleop|ros2 run ominibot_driver mecanum_teleop" 2>/dev/null
         pkill -f "fastdds discovery|fast-discovery-server" 2>/dev/null
         fuser -k /dev/ttyAMA0 2>/dev/null
         return 0
@@ -197,6 +225,7 @@ cmd_down() {
 
 cmd_restart() {
     [ $# -eq 0 ] && die "restart 要指定視窗:${WINDOWS[*]}"
+    validate_args_file || exit 1
     ensure_session
     local w
     for w in "$@"; do

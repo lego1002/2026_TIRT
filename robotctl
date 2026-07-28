@@ -9,7 +9,8 @@
 #   ./robotctl log [視窗] [行數]  不 attach 也能看某段最近的輸出(預設 bringup 200 行)
 #   ./robotctl args ["參數..."]   查看 / 設定 bringup 的 launch 參數,例:
 #                                   ./robotctl args "use_fake_odom:=true"
-#                                   ./robotctl args ""      # 清空
+#                                   ./robotctl args --clear  # 清空(或 args "")
+#                                 只收 k:=v 形式;旗標(--nav 之類)是 gcs.sh 的,不是這裡的
 #                                 設定後要 ./robotctl restart bringup 才生效
 #   ./robotctl shell              真的需要一個 Pi shell 時才用
 #
@@ -101,7 +102,26 @@ case "$cmd" in
         if [ $# -eq 0 ]; then
             echo -n "目前 bringup 參數: "
             remote "cat ~/.tirt_robot_args 2>/dev/null || echo '(空,用 launch 預設)'"
+        elif [ "$1" = --clear ] || [ -z "$*" ]; then
+            # `args ""` 是檔頭一直記載的清空寫法,要保留 —— 空字串進不了下面的 k:=v 檢查。
+            remote "rm -f ~/.tirt_robot_args"
+            echo "已清空 bringup 參數(改用 launch 預設)"
+            echo "→ 生效請跑:./robotctl restart bringup"
         else
+            # 只收 k:=v。這個檔案是**持久**的,所以一個壞值會污染之後每一次啟動,而且
+            # 症狀會出現在離原因非常遠的地方 —— 2026-07-28 實際發生過:舊版 gcs.sh 把
+            # `--nav` 當成 bringup 參數寫了進來,從此每次 up/restart 的 bringup 都變成
+            # `run_robot.sh --nav` 而直接失敗,機器人完全沒起來,但操作者在筆電上看到的
+            # 症狀是「RViz 沒開」。從那裡查回這個檔案要繞很大一圈。
+            for a in "$@"; do
+                case "$a" in
+                    *:=*) ;;
+                    *) die "bringup 參數必須是 k:=v 形式,「$a」不是。
+     例如:./robotctl args \"use_fake_odom:=true laser_yaw:=2.9146\"
+     旗標(--nav / --no-rviz / --down)是 ./gcs.sh 的,不是 bringup 的參數。
+     要清空目前設定:./robotctl args --clear" ;;
+                esac
+            done
             printf '%s' "$*" | remote "cat > ~/.tirt_robot_args"
             echo -n "已設定 bringup 參數: "
             remote "cat ~/.tirt_robot_args"

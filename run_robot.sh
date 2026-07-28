@@ -53,7 +53,11 @@ fi
 # 占著 GPIO-UART,第二個 driver 就會跟它搶同一個 port("multiple access on port"),
 # 讀值被打亂 → odom 死掉 → SLAM 每張 scan 都丟 → 地圖爛掉。每次啟動前清乾淨。
 # 注意這裡刻意不碰 fastdds discovery,它歸 tmux 的 dds 視窗管。
-pkill -f "robot_bringup.launch|ominibot_driver_node|sllidar_node|async_slam_toolbox_node" 2>/dev/null || true
+# pattern 都刻意帶前綴(`/` 或 `.py`)去對可執行檔路徑,而不是裸節點名:`pkill -f`
+# 比對的是整條 command line,所以裸名字會連「只是提到這個名字」的行程一起殺 ——
+# 一個 `grep ominibot_driver_node`、一個 tail、一個開著的編輯器都算。2026-07-28 就
+# 因此連續兩次把操作者自己的 shell 殺掉(exit 143)。
+pkill -f "robot_bringup\.launch\.py|/ominibot_driver_node|/sllidar_node|/async_slam_toolbox_node" 2>/dev/null || true
 fuser -k /dev/ttyAMA0 2>/dev/null || true
 sleep 1
 
