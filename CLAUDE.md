@@ -79,6 +79,37 @@ human-editable text.
     (`car_assemble_description/config/`) rather than in `my_robot_lidar` — copied in specifically so the PC
     can build just this one package and run SLAM without also installing `my_robot_lidar`/`sllidar_ros2`. Run
     via `./run_slam.sh` (repo root, PC side).
+  - `launch/nav2_pc.launch.py` + `config/nav2_params.yaml` — the **Nav2 autonomous-navigation** entry point
+    (added 2026-07-28), also PC-side, and **mutually exclusive with `slam_pc.launch.py`**: slam_toolbox and
+    AMCL both publish `map->odom`, so running both shreds the TF tree. Run via `./run_nav2.sh [map_name]`
+    (repo root, PC side), which pkills a stale slam_toolbox first. The launch file is a thin wrapper around
+    nav2_bringup's `bringup_launch.py` (`slam:=False`, so localization is AMCL against a saved map) plus RViz;
+    all the customization is in `config/nav2_params.yaml`. `map:` has **no default** and must be an absolute
+    path — maps deliberately stay in the repo's `maps/` (outside the package share) so saving a new one needs
+    no `colcon build`; `run_nav2.sh` resolves a bare name like `201_self_test` to `maps/201_self_test.yaml`.
+    What `nav2_params.yaml` changes versus nav2_bringup's stock file, and why (all four matter):
+    `use_sim_time` false throughout; `base_frame_id`/`robot_base_frame` is **`base_link`**, not
+    `base_footprint` (this URDF has no such link); everything switched to **holonomic** (AMCL
+    `nav2_amcl::OmniMotionModel`, non-zero `max_vel_y`/`vy_samples`, and `min_y_velocity_threshold` 0.5 →
+    0.001 — the stock 0.5 exists to discard strafe as noise on a diff-drive base and silently kills mecanum
+    strafing); and every dimension scaled down one size class for a 0.15 m robot in a maze
+    (`robot_radius` 0.22 → **0.11**, `inflation_radius` 0.55 → **0.18**, `xy_goal_tolerance` 0.25 → **0.10**,
+    NavFn `tolerance` 0.5 → 0.15, `allow_unknown` **false** so it won't plan through unmapped cells).
+    Local-costmap `width`/`height` are declared **integer metres** in `nav2_costmap_2d` — a `2.5` there makes
+    `controller_server`'s constructor throw and the whole `nav2_container` fail to load (hit on hardware).
+    The local planner is **DWB with the y axis opened up**, not MPPI: MPPI's `motion_model: "Omni"` is the
+    better fit for mecanum in tight corridors, but the arm64 `nav2_mppi_controller` binary **SIGILLs on the
+    Pi 4's Cortex-A72** the instant it loads (`nav2_container` dies with exit code -4, right after "Created
+    controller : FollowPath") — it uses instructions that CPU lacks, and no parameter change helps. Nav2
+    normally runs on the x86 PC where this doesn't apply, but a default that hard-crashes on one of the two
+    machines is a bad default; the full MPPI block is kept commented at the end of `nav2_params.yaml` as a
+    one-edit swap. Smoke-tested 2026-07-28 on the Pi against live `/scan` + `/odom`: all lifecycle nodes
+    reach active, map loads, AMCL processes scans, zero warnings.
+  - `rviz/view_nav2.rviz` — RViz config for navigation, copied from `nav2_bringup`'s `nav2_default_view.rviz`
+    (so it has the Navigation 2 panel, the **Nav2 Goal** tool, costmaps, plans and the AMCL particle cloud)
+    with two local fixes: RobotModel's `/robot_description` durability Volatile → **Transient Local** (that
+    topic is latched, so a Volatile subscriber joining after `robot_state_publisher` gets no model at all)
+    and enabled by default, plus the TB3-only "Bumper Hit" display disabled.
   - `rviz/view_robot.rviz` — saved RViz2 config for the **PC-side viewer** in the two-machine setup (Fixed
     Frame `map`, RobotModel on `/robot_description`, LaserScan `/scan`, Map `/map` with Durability set to
     **Transient Local** to receive the latched map, Odometry with `Keep: 1` and small arrows — the previous
@@ -208,8 +239,11 @@ human-editable text.
   header comment (`cp` to `/etc/udev/rules.d/`, reload, trigger).
 - `gcs.sh` / `robotctl` / `pi/robot_tmux.sh` — the operator entry points (see "Runtime deployment" below).
   `run_robot.sh` / `run_slam.sh` / `run_rviz.sh` / `save_map.sh` are still there and still work standalone,
-  but are now mostly called *by* those three.
-- `maps/` — saved SLAM maps (`.pgm` + `.yaml` pairs) produced by `save_map.sh`.
+  but are now mostly called *by* those three. `run_nav2.sh` is **not** called by `gcs.sh` — it is the
+  alternative to `run_slam.sh` (map-building vs. driving on a finished map), so which one you want is a
+  per-session decision; run it in `gcs.sh`'s `shell` window, or standalone.
+- `maps/` — saved SLAM maps (`.pgm` + `.yaml` pairs) produced by `save_map.sh`, and consumed by
+  `run_nav2.sh` / Nav2's `map_server`. `201_self_test` (2026-07-28) is 168×104 cells @ 0.05 m = 8.4 × 5.2 m.
 - `tools/` — standalone diagnostic scripts (plain `python3 foo.py`, no colcon package, no rebuild).
   `odom_check.py` prints live cumulative displacement/heading from `/odom` in metres and **degrees**
   (far more readable than echoing quaternions) and, on Ctrl-C, computes the `odom_linear_scale` /
@@ -404,6 +438,35 @@ stale instance first so `map->odom` isn't published twice. `./save_map.sh <name>
 All three need `car_assemble_description` built locally on the PC (for `package://` mesh paths and the in-repo
 `mapper_params_online_async.yaml`) plus `ros-humble-slam-toolbox` — but not `sllidar_ros2`, which stays
 Pi-only. Each aborts if `dds/setup_dds.sh` didn't configure a profile.
+
+### Autonomous navigation (Nav2) — the other PC-side mode
+
+`./run_nav2.sh [map] [launch args…]` (PC side; default map `201_self_test`, bare names resolve under `maps/`)
+is the **alternative to `./run_slam.sh`**, not an addition to it: SLAM builds a map, Nav2 drives on a finished
+one, and both publish `map->odom`, so the script pkills a stale `async_slam_toolbox_node` (and a stale
+`nav2_container`) before starting. Needs `ros-humble-navigation2` + `ros-humble-nav2-bringup` on the PC on top
+of the usual `car_assemble_description` build. Operating it: RViz comes up with `rviz/view_nav2.rviz`; if the
+robot isn't where the map says, fix it with **2D Pose Estimate**, then click **Nav2 Goal** and drag a heading.
+`amcl`'s `set_initial_pose` is on with pose `(0,0,0)`, which is correct *only* if the robot starts where the
+map's origin was recorded (i.e. where SLAM was started) — put it back on that spot and the pose-estimate step
+is unnecessary.
+
+Two operational gotchas, both of which look like hardware faults:
+
+- **Stop the Pi's keyboard teleop first** (`./robotctl down teleop`). `teleop_node` re-publishes its current
+  `Twist` every loop to keep the driver's watchdog fed, so while idle it streams zeros at 20 Hz; interleaved
+  with Nav2's commands the robot twitches and barely moves. `run_nav2.sh` prints this reminder rather than
+  killing the remote window itself.
+- **`/cmd_vel` now crosses WiFi in the PC→Pi direction** — the exact path that moving teleop onto the Pi was
+  meant to avoid (see "Where teleop runs, and why"). The existing mitigations carry over (`cmd_vel_timeout`
+  1.0 s, BEST_EFFORT depth-1) and `velocity_smoother` publishes a steady 20 Hz, but if it stutters, measure
+  with `tools/cmd_vel_check.py` on the Pi instead of guessing. Useful topic detail: `controller_server`
+  actually publishes `/cmd_vel_nav`, and nav2_bringup remaps `velocity_smoother`'s output to `/cmd_vel` — so
+  `/cmd_vel` is what reaches the base, `/cmd_vel_nav` is the raw planner output.
+
+Tuning order when something goes wrong: "planner says no path" is almost always costmap geometry, not the
+planner — drop `inflation_radius` toward 0.13, then `robot_radius` toward 0.09, before touching anything in
+`planner_server`. `allow_unknown: false` also means a goal in an unmapped pocket is unreachable by design.
 
 `car_assemble_description` is not fully self-contained at runtime: `robot_bringup.launch.py` still depends on
 `sllidar_ros2` for the lidar driver node, which lives in the ROS 2 workspace (`~/ros2_ws/src/`), **not in this
