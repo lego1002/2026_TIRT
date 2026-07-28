@@ -230,31 +230,57 @@ controller_server:
     FollowPath:
       plugin: "dwb_core::DWBLocalPlanner"
       debug_trajectory_details: True
-      # 速度上下限。刻意保守:這是迷宮不是直線賽道,而且 odom 本身有誤差,開快只是
-      # 更快撞牆。要跑快一點記得連 velocity_smoother 的 max_velocity 一起調,
-      # 不然快的部分會被 smoother 砍掉。
-      min_vel_x: -0.15      # 允許倒車(進了死路要退出來)
-      max_vel_x: 0.20
-      min_vel_y: -0.15      # <<< 麥克納姆的關鍵:原版是 0.0
-      max_vel_y: 0.15       # <<< 同上
-      max_vel_theta: 1.0
-      min_speed_xy: 0.0
-      max_speed_xy: 0.25    # x、y 合成速度上限(斜走時會同時用到兩軸)
-      min_speed_theta: 0.0
-      # 加減速限制。原版 2.5/3.2 是 TB3 的值,對這台 N20 小車太猛(而且指令要跨
-      # WiFi 過來,猛加速只會讓抖動更明顯)。
-      acc_lim_x: 1.0
-      acc_lim_y: 1.0
-      acc_lim_theta: 2.5
-      decel_lim_x: -1.5
-      decel_lim_y: -1.5
-      decel_lim_theta: -2.5
-      # 取樣數 = 候選軌跡數,這裡是 10×8×15 = 1200 條/cycle。vy_samples 從原版的
-      # 5 提到 8,因為橫移現在是真的會用到的自由度。再往上加只是白燒 CPU。
-      vx_samples: 10
+      # === 速度上下限(2026-07-28 第一次實跑後調快:0.20 → 0.35 m/s)===
+      # ★ 改速度必須「三個地方一起改」,只改這裡沒有用:
+      #     1. 這裡(DWB 產生候選軌跡的範圍)
+      #     2. velocity_smoother 的 max_velocity / min_velocity(在檔案下方)
+      #        —— smoother 在最後一關把指令夾回它自己的上限,這裡開到 0.35 而
+      #        smoother 留 0.20,實際跑出來就是 0.20,而且完全不會有任何警告。
+      #     3. behavior_server 的 max_rotational_vel(recovery 自轉時才用到)
+      #   詳細的調參順序寫在 notes/nav2_tuning.md。
+      min_vel_x: -0.20      # 允許倒車(進了死路要退出來)
+      max_vel_x: 0.35
+      min_vel_y: -0.25      # <<< 麥克納姆的關鍵:原版是 0.0
+      max_vel_y: 0.25       # <<< 同上
+      max_vel_theta: 1.5
+      # === 「速度不夠而打滑/走不動」的解法(2026-07-28 實跑後新增)===
+      # 症狀:DWB 為了貼齊路徑常常挑出 0.02-0.03 m/s 的軌跡,但這台 N20 + 麥克納姆
+      # 在那個速度下扭力不足,輪子原地打滑、車不動,而 nav2 以為自己在前進,最後被
+      # progress_checker 判定卡住而觸發 recovery。給一個「要走就走得夠快到真的會動」
+      # 的下限。
+      #
+      # ⚠ 這兩個參數是綁在一起的,單獨設 min_speed_xy 完全沒有作用。DWB 的
+      #   KinematicParameters::isValidSpeed() 判斷式是
+      #       (平移慢於 min_speed_xy) AND (自轉慢於 min_speed_theta) → 丟掉
+      #   兩個條件是 AND。min_speed_theta 留在原版的 0.0 時,「自轉慢於 0.0」永遠
+      #   不成立,整條判斷永遠是 false,min_speed_xy 寫多少都不會被採用。
+      #   (語意其實是合理的:丟掉「哪個自由度都幾乎沒在動」的軌跡。純慢速自轉會保留。)
+      #
+      # ⚠ 副作用:走道很窄時如果所有候選軌跡都被這個下限刷掉,DWB 會回報找不到
+      #   可行軌跡 → controller 失敗 → 觸發 recovery。所以刻意取保守值。要退回
+      #   原本行為就把兩個都設成 0.0。
+      min_speed_xy: 0.06
+      min_speed_theta: 0.15
+      max_speed_xy: 0.40    # x、y 合成速度上限(斜走時會同時用到兩軸)
+      # 加減速限制。★ 這是「開快」和「打滑」之間真正的取捨點,不是最高速。
+      # 麥克納姆的滾子一打滑,里程計就毀了(這台的航向已經因此改用 gyro 積分,
+      # 見 notes/SLAM_learning_note.md),所以最高速可以往上加,加速度要慢慢加。
+      # 覺得起步/煞車在打滑就先降這裡,不要先降 max_vel_x。
+      acc_lim_x: 1.5
+      acc_lim_y: 1.5
+      acc_lim_theta: 3.0
+      decel_lim_x: -2.0
+      decel_lim_y: -2.0
+      decel_lim_theta: -3.0
+      # 取樣數 = 候選軌跡數,這裡是 12×8×15 = 1440 條/cycle。vy_samples 從原版的
+      # 5 提到 8,因為橫移現在是真的會用到的自由度;vx 從 10 提到 12 是因為速度
+      # 範圍拉寬到 -0.20~0.35 之後,取樣間隔會變粗。再往上加只是白燒 CPU。
+      vx_samples: 12
       vy_samples: 8
       vtheta_samples: 15
-      sim_time: 1.5         # 每條軌跡往前模擬 1.5s;迷宮轉角密,看太遠沒意義
+      # 每條軌跡往前模擬多久。1.5s × 0.35m/s ≈ 前方 0.5m,對迷宮的走道長度剛好。
+      # 再加大會開始「看過轉角」而選出撞牆的軌跡。
+      sim_time: 1.5
       linear_granularity: 0.05
       angular_granularity: 0.025
       transform_tolerance: 0.5   # 跨 WiFi 的 TF,比原版 0.2 放寬
@@ -276,7 +302,9 @@ controller_server:
       PathDist.scale: 32.0       # 位置要貼齊全域路徑,迷宮裡不能自己抄捷徑
       GoalDist.scale: 24.0
       RotateToGoal.scale: 32.0   # 最後對正目標朝向
-      RotateToGoal.slowing_factor: 5.0
+      # 「接近目標時把速度壓下來」的倍率。原版 5.0 會讓最後一段變成長距離爬行 ——
+      # 正是這台在低速走不動的區間,看起來就像快到終點卻卡住。5.0 → 2.0。
+      RotateToGoal.slowing_factor: 2.0
       RotateToGoal.lookahead_time: -1.0
       Oscillation.scale: 1.0
       # 「移動多遠才算脫離振盪」。原版 0.05m 對這台 0.15m 的小車偏大,容易誤判成
@@ -373,11 +401,13 @@ behavior_server:
     robot_base_frame: base_link
     transform_tolerance: 0.5     # 跨 WiFi,比原版 0.1 放寬
     simulate_ahead_time: 2.0
-    # recovery 用的自轉速度。原版 min 0.4rad/s 對這台小車偏快(而且 min 太大會
-    # 讓「小角度修正」變成猛甩),降到 0.3。
-    max_rotational_vel: 1.0
+    # recovery(spin / backup)用的自轉速度,和 controller 的速度是各自獨立的 ——
+    # 這是「★ 改速度要動的三個地方」的第 3 個。max 跟著 FollowPath 的
+    # max_vel_theta 一起提到 1.5;min 原版 0.4rad/s 對這台小車偏快(min 太大會讓
+    # 小角度修正變成猛甩),降到 0.3。
+    max_rotational_vel: 1.5
     min_rotational_vel: 0.3
-    rotational_acc_lim: 2.5
+    rotational_acc_lim: 3.0
 
 smoother_server:
   ros__parameters:
@@ -406,12 +436,17 @@ velocity_smoother:
     smoothing_frequency: 20.0
     scale_velocities: False
     feedback: "OPEN_LOOP"        # 不回讀 odom(這台 odom 本身有 scale 誤差,回讀只會更亂)
-    # 三個元素 = [x, y, theta]。y 不再是 0 —— 這是麥克納姆的橫移上限,要跟
-    # MPPI 的 vy_max 對齊,否則 smoother 會把 controller 算好的橫移砍掉。
-    max_velocity: [0.20, 0.15, 1.0]
-    min_velocity: [-0.15, -0.15, -1.0]
-    max_accel: [1.0, 1.0, 2.5]
-    max_decel: [-1.5, -1.5, -2.5]
+    # 三個元素 = [x, y, theta]。y 不再是 0 —— 這是麥克納姆的橫移上限。
+    #
+    # ★ 這裡是「改速度要動的三個地方」的第 2 個,也是最容易漏掉的一個:smoother
+    #   在送出 /cmd_vel 前會把指令夾回這裡的上限,而且夾掉不會有任何 log。所以這
+    #   四行必須和 FollowPath 的 max_vel_x / max_vel_y / max_vel_theta 與
+    #   acc_lim_* / decel_lim_* 保持一致 —— 只改 FollowPath 的話,車速完全不會變,
+    #   而你會以為參數沒生效而去亂調別的東西。
+    max_velocity: [0.35, 0.25, 1.5]
+    min_velocity: [-0.20, -0.25, -1.5]
+    max_accel: [1.5, 1.5, 3.0]
+    max_decel: [-2.0, -2.0, -3.0]
     odom_topic: "odom"
     odom_duration: 0.1
     deadband_velocity: [0.0, 0.0, 0.0]

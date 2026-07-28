@@ -1,47 +1,38 @@
 slam_toolbox:
   ros__parameters:
 
-    # Plugin params
+    # 核心設定
     solver_plugin: solver_plugins::CeresSolver
     ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
     ceres_preconditioner: SCHUR_JACOBI
     ceres_trust_strategy: LEVENBERG_MARQUARDT
-    ceres_dogleg_type: TRADITIONAL_DOGLEG
-    ceres_loss_function: None
-
-    # ROS Parameters
-    odom_frame: odom
-    map_frame: map
-    base_frame: base_footprint
-    scan_topic: /scan
-    use_map_saver: true
-    mode: mapping #localization
-
-    # if you'd like to immediately start continuing a map at a given pose
-    # or at the dock, but they are mutually exclusive, if pose is given
-    # will use pose
-    #map_file_name: test_steve
-    # map_start_pose: [0.0, 0.0, 0.0]
-    #map_start_at_dock: true
-
+    
+    # 模式設定
+    mode: mapping # 建圖模式
     debug_logging: false
     throttle_scans: 1
-    transform_publish_period: 0.02 #if 0 never publishes odometry
-    map_update_interval: 5.0
-    resolution: 0.05
-    min_laser_range: 0.0 #for rastering images
-    max_laser_range: 20.0 #for rastering images
-    minimum_time_interval: 0.5
-    transform_timeout: 0.2
+    transform_publish_period: 0.02 # 50Hz 發布頻率
+    map_update_interval: 2.0
+    resolution: 0.05 # 地圖解析度 (5cm 一格)
+    max_laser_range: 12.0 # C1 最遠可以到 12m (再遠通常不準)
+    min_laser_range: 0.15 # C1 最近 ~0.1m;設 0.15 濾掉太近的雜點(消除啟動時 0.0m 警告)
+    minimum_time_interval: 0.1
+    transform_timeout: 1.0 # 0.5→1.0:雙機 WiFi 突發傳輸實測 /scan 停頓達 0.47s,拉大等 TF 的容忍時間,避免 queue full 丟 scan
     tf_buffer_duration: 30.
-    stack_size_to_use: 40000000 #// program needs a larger stack size to serialize large maps
+    stack_size_to_use: 40000000 # 記憶體設定
     enable_interactive_mode: true
 
-    # General Parameters
+    # 座標系設定 (關鍵！)
+    base_frame: base_link
+    map_frame: map
+    odom_frame: odom
+    scan_topic: /scan
+
+    # 機器人運動模式 (如果是差速輪/雙輪，這個很重要)
     use_scan_matching: true
     use_scan_barycenter: true
-    minimum_travel_distance: 0.5
-    minimum_travel_heading: 0.5
+    minimum_travel_distance: 0.2
+    minimum_travel_heading: 0.17
     scan_buffer_size: 10
     scan_buffer_maximum_scan_distance: 10.0
     link_match_minimum_response_fine: 0.1  
@@ -53,17 +44,17 @@ slam_toolbox:
     loop_match_minimum_response_coarse: 0.35    
     loop_match_minimum_response_fine: 0.45
 
-    # Correlation Parameters - Correlation Parameters
+    # 關聯掃描匹配
     correlation_search_space_dimension: 0.5
     correlation_search_space_resolution: 0.01
     correlation_search_space_smear_deviation: 0.1 
 
-    # Correlation Parameters - Loop Closure Parameters
+    # 迴路閉合 (Loop Closure)
     loop_search_space_dimension: 8.0
     loop_search_space_resolution: 0.05
     loop_search_space_smear_deviation: 0.03
 
-    # Scan Matcher Parameters
+    # 掃描匹配器
     distance_variance_penalty: 0.5      
     angle_variance_penalty: 1.0    
 
@@ -73,5 +64,3 @@ slam_toolbox:
     minimum_angle_penalty: 0.9
     minimum_distance_penalty: 0.5
     use_response_expansion: true
-    min_pass_through: 2
-    occupancy_threshold: 0.1

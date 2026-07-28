@@ -35,9 +35,10 @@ human-editable text.
     to resolve mesh files.
   - `urdf/CAR_ASSEMBLE_URDF.csv` — the exporter's intermediate per-link/joint data (inertials, origins,
     limits). Useful as a flat reference when cross-checking the URDF, but the `.urdf` is the source of truth.
-  - `config/joint_names_CAR_ASSEMBLE_URDF.yaml` — leftover ROS 1 `ros_control` `controller_joint_names`
-    format; `ros2_control` uses a different config format entirely, so this needs a rewrite (not a
-    conversion) once `ros2_control` is wired up.
+  - The package has **no `config/` directory of its own** as of 2026-07-28 — all YAML lives in the repo-root
+    `config/`, see that bullet below. Launch files still resolve params through
+    `get_package_share_directory('car_assemble_description') + '/config'` and need no path knowledge, because
+    `CMakeLists.txt` installs `../config/` into the package share.
   - `launch/display.launch.py` and `launch/gazebo.launch.py` — ROS 2 Python launch files (RViz2 preview with
     `joint_state_publisher_gui`, and Gazebo Classic spawn via `gazebo_ros`/`spawn_entity.py`). See
     `notes/urdf閱讀方法.md`'s "ROS 2 轉換" and "套件改名" sections for the full conversion/rename rationale and what
@@ -75,11 +76,11 @@ human-editable text.
     rotating "fan smear" map. Splitting SLAM onto the PC means the Pi only has to stream `/scan` and the
     `odom->base_link` TF over DDS; the PC does the scan matching and publishes `map->odom` + `/map` locally
     (so the large `/map` data never has to cross the network back to the Pi). Both launch files read the
-    *same* `config/mapper_params_online_async.yaml`, which now lives **inside this repo**
-    (`car_assemble_description/config/`) rather than in `my_robot_lidar` — copied in specifically so the PC
-    can build just this one package and run SLAM without also installing `my_robot_lidar`/`sllidar_ros2`. Run
-    via `./run_slam.sh` (repo root, PC side).
-  - `launch/nav2_pc.launch.py` + `config/nav2_params.yaml` — the **Nav2 autonomous-navigation** entry point
+    *same* `mapper_params_online_async.yaml`, which now lives **inside this repo** (the repo-root `config/`)
+    rather than in `my_robot_lidar` — copied in specifically so the PC can build just this one package and run
+    SLAM without also installing `my_robot_lidar`/`sllidar_ros2`. Run via `./run_slam.sh` (repo root, PC side).
+  - `launch/nav2_pc.launch.py` (+ the repo-root `config/nav2_params.yaml`) — the **Nav2 autonomous-navigation**
+    entry point
     (added 2026-07-28), also PC-side, and **mutually exclusive with `slam_pc.launch.py`**: slam_toolbox and
     AMCL both publish `map->odom`, so running both shreds the TF tree. Run via `./run_nav2.sh [map_name]`
     (repo root, PC side), which pkills a stale slam_toolbox first. The launch file is a thin wrapper around
@@ -116,6 +117,19 @@ human-editable text.
     `Keep: 50` + 0.4 m arrows visually buried the 0.15 m robot; temporarily set `Keep` back up to visualize
     odometry error as a breadcrumb trail when calibrating — and TF). Note this is distinct from
     `display.launch.py`, which still ships no saved config and needs its displays added by hand.
+- `config/` — **the single home for every tunable YAML** (consolidated here 2026-07-28 at the operator's
+  request: params, like `maps/`, are what actually gets edited between field runs, so they should not be
+  buried inside a package). `nav2_params.yaml`, `mapper_params_online_async.yaml`, and the leftover ROS 1
+  `joint_names_CAR_ASSEMBLE_URDF.yaml` (dead — `ros2_control` uses a different format entirely, so it needs a
+  rewrite rather than a conversion once `ros2_control` is wired up). `car_assemble_description/CMakeLists.txt`
+  installs `../config/` into the package share, so launch files keep resolving params via
+  `get_package_share_directory(...)` with no knowledge of where the repo is, and `--symlink-install` means
+  editing these files needs no rebuild (a **restart** of the affected node is still required — nav2 and
+  slam_toolbox read these at configure time). Trade-off accepted: `car_assemble_description` can no longer be
+  copied to another workspace on its own. **Caution:** before this consolidation, root `config/` held a
+  *stale upstream-default* copy of `mapper_params_online_async.yaml` (`base_frame: base_footprint`,
+  `transform_timeout: 0.2`, `max_laser_range: 20`) that nothing read while the tuned copy lived in the
+  package — if an older branch or backup is ever merged, make sure the tuned version wins.
 - `OminiBotHV-master/` — vendor (CircusPi) driver package for the OminiBotHV motor/IMU controller board.
   - `example/OminiBot_HV_Meca.py` — reference Python driver (`ominibothv` class) showing the serial protocol:
     frames are `\x7b <cmd> ... <bcc> \x7d` with a big-endian XOR checksum (`calculate_bcc`). Key methods:
@@ -304,9 +318,15 @@ human-editable text.
   odometry calibration procedures (§7: drive 1 m to verify `odom_linear_scale`, spin 720° to verify
   `use_gyro_heading`/`gyro_scale`), and a quick-reference table of driver + slam_toolbox parameters. Read it
   before touching odometry, driver geometry params, or slam_toolbox config. As of 2026-07-21 the slam_toolbox
-  config (`mapper_params_online_async.yaml`) has been copied **into this repo**
-  (`car_assemble_description/config/`) so the PC can run SLAM without installing `my_robot_lidar`; see
-  `launch/slam_pc.launch.py` above.
+  config (`mapper_params_online_async.yaml`) has been copied **into this repo** (repo-root `config/` since
+  2026-07-28) so the PC can run SLAM without installing `my_robot_lidar`; see `launch/slam_pc.launch.py` above.
+- `notes/nav2_tuning.md` — the **Nav2 tuning manual** (Chinese, added 2026-07-28 after the first real drive).
+  Read this rather than re-deriving parameter effects: a symptom→parameter index, the three places speed must
+  be changed in lockstep, the slip-vs-stall distinction (accel limits vs. `min_speed_*`), why "no path" is
+  almost always costmap geometry rather than the planner, what each DWB critic actually controls, and
+  swap-in tables for the other installed planners/controllers. It also draws the line for maze-solving
+  algorithms: right-hand-rule / DFS / flood-fill belong **above** Nav2 as a `NavigateToPose` client
+  (`nav2_simple_commander`), not as a planner plugin.
 - `notes/command_note.md` — quick crib sheet (Chinese) of the start-to-finish SLAM session commands; overlaps the
   runbook, kept as the operator's cheat sheet.
 - `networkplan.md` — in-progress notes (Chinese) on bringing self-hosted Wi-Fi (phone or laptop hotspot) to
@@ -451,7 +471,7 @@ robot isn't where the map says, fix it with **2D Pose Estimate**, then click **N
 map's origin was recorded (i.e. where SLAM was started) — put it back on that spot and the pose-estimate step
 is unnecessary.
 
-Two operational gotchas, both of which look like hardware faults:
+Three operational gotchas, all of which look like something other than what they are:
 
 - **Stop the Pi's keyboard teleop first** (`./robotctl down teleop`). `teleop_node` re-publishes its current
   `Twist` every loop to keep the driver's watchdog fed, so while idle it streams zeros at 20 Hz; interleaved
@@ -463,10 +483,37 @@ Two operational gotchas, both of which look like hardware faults:
   with `tools/cmd_vel_check.py` on the Pi instead of guessing. Useful topic detail: `controller_server`
   actually publishes `/cmd_vel_nav`, and nav2_bringup remaps `velocity_smoother`'s output to `/cmd_vel` — so
   `/cmd_vel` is what reaches the base, `/cmd_vel_nav` is the raw planner output.
+- **A SLAM instance on the *other* machine is invisible to the local pkill.** DDS is network-wide: hit on
+  2026-07-28 while testing, with `run_slam.sh` still up on the PC — its live growing `/map` (168×142) and
+  `map_server`'s saved map (168×104) were both being fed to AMCL, and both nodes were publishing `map->odom`.
+  Nav2 logs nothing at all; localization is just inexplicably bad. `run_nav2.sh` now asks
+  `ros2 topic info /map` *before* starting its own `map_server` — any publisher at that moment is somebody
+  else — and warns. Also note nav2's `component_container_isolated` **ignores SIGTERM**: an orphan survived
+  ~20 min after its launch was killed, ate the Pi's CPU, and made the next start sit silent for 46 s with no
+  log output, which reads exactly like a broken config. `run_nav2.sh` escalates to SIGKILL for this reason,
+  and its kill pattern is `component_container_isolated.*nav2_container`, not the bare `nav2_container` —
+  the short pattern matches any command line containing that string, including the operator's own shell.
 
 Tuning order when something goes wrong: "planner says no path" is almost always costmap geometry, not the
 planner — drop `inflation_radius` toward 0.13, then `robot_radius` toward 0.09, before touching anything in
 `planner_server`. `allow_unknown: false` also means a goal in an unmapped pocket is unreachable by design.
+**Full tuning guide: `notes/nav2_tuning.md`** — read it before changing parameters. The two things it exists to
+stop you re-discovering: (1) **speed lives in three places** — `FollowPath.max_vel_*`,
+`velocity_smoother.max_velocity`, and `behavior_server.max_rotational_vel` — and `velocity_smoother` clamps
+the final `/cmd_vel` **silently**, so raising only `FollowPath` changes nothing at all and looks like the
+params aren't loading (diff `/cmd_vel` against `/cmd_vel_nav` to catch it); (2) DWB's `min_speed_xy` is
+**AND**-ed with `min_speed_theta` in `isValidSpeed()`, so with `min_speed_theta: 0.0` (the stock value)
+`min_speed_xy` is dead code no matter what you set it to.
+
+Post-first-drive tuning, 2026-07-28 (user reported directions correct but too slow for maze-solving, and
+stalling/slipping at low speed): `max_vel_x` 0.20 → **0.35**, `max_vel_y` 0.15 → **0.25**, `max_vel_theta`
+1.0 → **1.5**, accel 1.0 → 1.5, with `velocity_smoother` and `behavior_server` moved in lockstep. The stall
+was addressed with `min_speed_xy` **0.06** + `min_speed_theta` **0.15** (DWB kept selecting 0.02–0.03 m/s
+trajectories the N20 base can't actually execute — wheels slip, Nav2 believes it is moving, then
+`progress_checker` fires) and `RotateToGoal.slowing_factor` 5.0 → **2.0** (the stock value turns the final
+approach into a long crawl in exactly that dead band). `vx_samples` 10 → 12 since the velocity range widened.
+Not yet re-tested on hardware at these values — if it now slips on launch/braking, lower `acc_lim_*` first,
+not `max_vel_x`; mecanum roller slip is caused by acceleration and it destroys odometry.
 
 `car_assemble_description` is not fully self-contained at runtime: `robot_bringup.launch.py` still depends on
 `sllidar_ros2` for the lidar driver node, which lives in the ROS 2 workspace (`~/ros2_ws/src/`), **not in this
