@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>tirt_sim</name>
+  <version>0.1.0</version>
+  <description>2026 TIRT 迷宮機器人:2D 假物理模擬環境。發出和真車完全一致的 /scan、/odom、TF,
+  讓 slam_toolbox / Nav2 / teleop 原封不動地跑,用於在沒有硬體的情況下學習與除錯整套系統。</description>
+  <maintainer email="gdteyuj123@gmail.com">lego</maintainer>
+  <license>BSD</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <!-- 車體 URDF 與 slam 參數都取自這個套件,模擬和實機共用同一份 -->
+  <exec_depend>car_assemble_description</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>joint_state_publisher</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

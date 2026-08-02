@@ -179,9 +179,27 @@ human-editable text.
   over-reports as ~2270° of wheel yaw, vs. ~350° from the gyro); the IMU quaternion itself can't substitute
   since it's 6-axis with no magnetometer, so yaw is frozen. `gyro_z_sign`/`gyro_scale` fine-tune that gyro
   integration. Calibration procedures for all of the above (drive 1 m / spin 720° and compare `/odom`) are in
-  `notes/SLAM_learning_note.md` §7. Note `ominibot_driver` is `ament_python`: unlike launch/config edits, editing
-  any `.py` requires `colcon build --packages-select ominibot_driver --symlink-install` before `ros2
-  run`/`ros2 launch` pick it up.
+  `notes/SLAM_learning_note.md` §7. **The same fixed board-internal calibration also mis-scales incoming
+  `/cmd_vel` — the *other* half of the bug** (found 2026-07-25, `tools/step_response.py`): a commanded
+  0.15 m/s produced only ~0.019 m/s of real motion, an ~8× shortfall, confirmed by both `/odom` and direct
+  observation (the robot moved <2 cm over a whole test). Only the feedback half had been corrected until
+  then, which is why the teleop defaults had crept up to an absurd 0.6 m/s / 1.5 rad/s for a 15 cm robot —
+  that was hand-compensation for this bug, not a real desired speed. `cmd_linear_scale`/`cmd_angular_scale`
+  (declared in both `driver_node.py` and `robot_bringup.launch.py`, default **1.0 = uncorrected** as of
+  2026-07-28) are the fix point; calibrate with `tools/vel_sweep.py`, which regresses actual-vs-commanded
+  speed and prints the scale directly, and distinguishes a simple fixed-ratio error from a static-friction
+  dead zone (each needs a different fix). `motor_direct`/`encoder_direct` (default 0/10, CircusPi factory
+  wiring bitmasks) are exposed for the same reason but their underlying hypothesis — one wheel not driving —
+  was **retracted**: `tools/wheel_test.py` initially seemed to show 3-of-4 wheels only working one direction,
+  but re-runs moved the fault to different wheels each time and the operator visually confirmed all four spin
+  fine both ways; the tool's per-wheel body-velocity readback saturates at ~2.77, so the average was really
+  measuring spin-up time, not motor health. No wiring fault has been demonstrated — leave these at factory
+  values unless the symptom reappears. `tools/selftest_analyze.py` is a regression test for
+  `tools/analyze_bag.py`'s rotation-sign math (run it after touching that math) — synthetic data with a known
+  answer catches a flipped sign that looks identical to correct output on real data (this happened once,
+  2026-07-25: a sign bug misdiagnosed a healthy robot as needing `gyro_z_sign` flipped). Note `ominibot_driver`
+  is `ament_python`: unlike launch/config edits, editing any `.py` requires
+  `colcon build --packages-select ominibot_driver --symlink-install` before `ros2 run`/`ros2 launch` pick it up.
   - `ominibot_driver/teleop_node.py` (`mecanum_teleop` console script) — keyboard teleop purpose-built for a
     holonomic base: the numeric-pad `u/i/o j/k/l m/,/.` keys are pure translation (including strafing, a
     first-class motion instead of Shift-hidden like `teleop_twist_keyboard`), `a`/`d` are pure spin, `w`/`s`
@@ -255,11 +273,19 @@ human-editable text.
   `run_robot.sh` / `run_slam.sh` / `run_rviz.sh` / `save_map.sh` are still there and still work standalone,
   but are now mostly called *by* those three. `run_nav2.sh` is **not** called by `gcs.sh` — it is the
   alternative to `run_slam.sh` (map-building vs. driving on a finished map), so which one you want is a
-  per-session decision; run it in `gcs.sh`'s `shell` window, or standalone.
+  per-session decision; run it in `gcs.sh`'s `shell` window, or standalone. `run_rviz_orient.sh` (PC side,
+  standalone, not called by `gcs.sh`) is a pre-SLAM sanity view for "which way is the robot actually facing":
+  Fixed Frame `odom` (works against plain `run_robot.sh`, no SLAM needed), TopDownOrtho projection so angles
+  read true, and big Axes markers on `base_link`/`laser_frame` — it exists because judging angles in the
+  default Orbit view is how a ~167° `laser_yaw` error went unnoticed for a long time. Loads
+  `car_assemble_description/rviz/orientation_check.rviz`.
 - `maps/` — saved SLAM maps (`.pgm` + `.yaml` pairs) produced by `save_map.sh`, and consumed by
   `run_nav2.sh` / Nav2's `map_server`. `201_self_test` (2026-07-28) is 168×104 cells @ 0.05 m = 8.4 × 5.2 m.
-  **`/maps` is gitignored, so maps do not sync between the two machines, and the two directories genuinely
-  hold different files.** `save_map.sh` writes to whichever machine you run it on, and the natural workflow —
+  **`/maps` used to be gitignored** (commit `601b05a`, 2026-07-28, now tracks it — only the sim's generated
+  `maps/sim_*` stay ignored, since `gcs_sim.sh` regenerates them). Before that change maps did not sync
+  between the two machines and the two directories genuinely held different files, which is what the
+  auto-copy below was written for; it is still the right fallback whenever a map exists on one machine only.
+  `save_map.sh` writes to whichever machine you run it on, and the natural workflow —
   save from the Pi, navigate from the PC — puts the map on the wrong one, since `map_server` runs on the PC.
   Hit on 2026-07-28: `run_nav2.sh` reported the map missing on the laptop while it existed on the Pi. It now
   **auto-copies a missing map from the Pi over scp** (only when absent locally, so it can never clobber
@@ -299,6 +325,27 @@ human-editable text.
   8–10° heading error scored 0.039 m, *under* the 0.05 m cell size and easy to call "fine" (the tool's own
   first verdict did exactly that and had to be fixed). The same 8° is `3·sin8° ≈ 0.42 m` at 3 m, which is why
   near walls look aligned while far walls are visibly rotated. Judge by whether a better pose exists.
+  `nav2_params_compat.py <in> <out>` is **not a diagnostic** — it is the humble→jazzy translation layer for
+  `config/nav2_params.yaml` (2026-08-02), called automatically by `run_nav2.sh` and normally never run by
+  hand. The competition machines (Pi + contest laptop) are **humble** and that params file must stay
+  humble-correct, but the dev/sim VM is **jazzy**, where three Nav2 changes break it. The script rewrites a
+  temp copy (original untouched, output is idempotent) and prints what it changed:
+  (1) pluginlib names went `pkg/ClassName` → `pkg::ClassName` — affects `nav2_navfn_planner/NavfnPlanner`
+  and the five `nav2_behaviors/*`; everything else in the file was already `::` and is portable;
+  (2) `bt_navigator`'s `plugin_lib_names` must be **removed** — jazzy auto-registers built-in BT nodes and
+  re-listing them throws `ID [ComputePathToPose] already registered`, while humble *requires* the full list;
+  (3) jazzy's `navigation_launch.py` adds `route_server`/`collision_monitor`/`docking_server` to the
+  lifecycle list, and the latter two abort configure without params (`observation_sources is not
+  initialized`, `Charging dock plugins not given!`) — the script appends both sections, with
+  `collision_monitor`'s `scan.min_height` set to `-1.0` because the stock `0.15` would filter out this
+  maze's 20 cm walls entirely.
+  **Why this was hard to diagnose:** `lifecycle_manager` aborts the whole batch on the first failure, but
+  `map_server` and `amcl` come up in an *earlier* manager and stay `active` — so RViz shows the map and the
+  particle cloud, looks healthy, and the only visible complaint is `navigate_to_pose action server is not
+  available. Is the initial pose set?`, which sends you off re-clicking **2D Pose Estimate** forever. The
+  initial pose has nothing to do with it. Whenever Nav2 "does nothing", check
+  `ros2 lifecycle get /bt_navigator` (and `/planner_server`, `/controller_server`) before touching anything
+  else — `unconfigured` there means read the `FATAL` line in the nav window, not the RViz message.
   `cmd_vel_check.py` is the **network-side** counterpart to `motor_diag.py` (2026-07-27): run it on the
   Pi while driving and it reports the `/cmd_vel` inter-arrival p50/p95/p99/max and, crucially, **how many
   gaps exceeded `cmd_vel_timeout`** — each one is a watchdog trip that zeroes the base, which is what
@@ -318,6 +365,67 @@ human-editable text.
   offset by least-squares fitting `Δr(θ) ≈ -d·cos(θ-φ)` over a straight run (→ `laser_yaw`). Record with
   `record_diag.py` following the still → spin 360° → still → drive 1 m → still routine; the stationary
   gaps are what the segmenter keys on.
+- `sim/` — **2D fake-physics simulation of the whole robot** (added 2026-08-01), an `ament_python`
+  package `tirt_sim` symlinked into `~/ros2_ws/src/` like the other two. Its entire design goal is that the
+  simulated robot is **interface-identical** to the real one — `fake_base` replaces `ominibot_driver`
+  (subscribes `/cmd_vel` with the same BEST_EFFORT depth-1 QoS and the same `cmd_vel_timeout` watchdog,
+  publishes `/odom` @20 Hz + `odom->base_link`) and `fake_lidar` replaces `sllidar_node` (publishes `/scan`,
+  `laser_frame`, 450 pts @10 Hz, C1's ranges). So `run_slam.sh`, `run_nav2.sh`, `save_map.sh`,
+  `mecanum_teleop` and both RViz configs run against it **unmodified** — which is the point: what you
+  practice in sim is what you type on competition day. Entry points mirror the real ones: `sim/setup_sim.sh`
+  (one-time workspace symlink + build; detects the ROS distro rather than hardcoding humble, because the dev
+  VM is jazzy), `sim/run_sim.sh` ↔ `run_robot.sh`, `sim/gcs_sim.sh` ↔ `gcs.sh` (same tmux layout, same
+  `Ctrl-b m` save-map binding, same `--nav` mode).
+  - **Deliberately fake physics, deliberately 2D.** The rules allow only a lidar and the walls are flat 20 cm
+    planes, so the robot's perceivable world *is* 2D; a 3D engine would add setup cost and no information.
+    Only the effects that change upper-layer behaviour are modelled: accel limits, odom scale error, mecanum
+    slip, cmd dropout/stall, lidar noise. Motor PID, torque, battery sag and serial-link faults are
+    explicitly **not** simulated — those stay `tools/motor_diag.py` / `step_response.py` territory on real
+    hardware.
+  - `sim/faults.md` is the reason the sim exists: **eight one-line reproductions of bugs that actually
+    happened on this robot** (laser_yaw 167° → fan smear, odom scale → map drift, cmd stall → 一頓一頓,
+    `robot_radius` too big → instant goal abort, two `map->odom` publishers, …), each with the symptom, the
+    diagnosis command, and which `tools/` script proves it. Point a confused operator here before letting
+    them debug on hardware.
+  - Publishes three god's-eye topics the real robot cannot have: `/sim/ground_truth`, `/sim/odom_error`
+    (odom vs. truth — makes drift visible instead of inferred) and `/sim/collision` (rule 五.5: touching any
+    maze wall = that run fails). Collisions **block** motion rather than letting the robot pass through —
+    otherwise Nav2 learns a through-wall shortcut and reports success. Odom keeps integrating while blocked,
+    exactly as real wheels spinning against a wall do.
+  - `sim/worlds/*.yaml` define the maze as **ASCII art** (`+--+` / `|` per the classic maze format) at the
+    rulebook's real dimensions (44 cm cells, 46 cm pitch, 9×9 = 4.16 m). Rule 四.3 says the organizer
+    supplies the actual path map before the event — when it arrives, redraw the `maze:` block and nothing
+    else. `sim/tirt_sim/make_map.py` renders a world straight to a Nav2 `.pgm`+`.yaml`, giving a
+    **geometrically perfect map**; running Nav2 on that separates "the map is bad" from "the Nav2 params are
+    wrong", which on real hardware are permanently entangled.
+  - `run_slam.sh` / `run_nav2.sh` / `save_map.sh` gained a **`TIRT_SIM=1` escape hatch** (set by `gcs_sim.sh`)
+    that skips the
+    `dds/setup_dds.sh` requirement and the scp-map-from-Pi step — the sim is single-machine, so the whole
+    Discovery-Server/alias-IP layer (which exists only for the Pi↔laptop WiFi link) does not apply. All three
+    also now fall back to another ROS distro when `/opt/ros/humble` is absent. These are the only changes the
+    sim made to competition-critical scripts; on the humble machines all are no-ops. `save_map.sh` was the
+    straggler — it kept a hardcoded `source /opt/ros/humble/setup.bash` plus a mandatory DDS check until
+    2026-08-02, so under `set -e` on the jazzy sim machine `gcs_sim.sh`'s **`Ctrl-b m` did nothing** except
+    flash one "No such file or directory" line in the `shell` window.
+  - **Saving a map is a *mapping-mode* action, and the sim's `--nav` map is not made that way.** In
+    `./sim/gcs_sim.sh` (no flag) slam_toolbox builds `/map` and `Ctrl-b m` → `save_map.sh sim_<HHMMSS>` into
+    `maps/`. In `--nav` mode there is no SLAM: the map is generated **geometrically** by
+    `sim/tirt_sim/make_map.py` straight from `sim/worlds/*.yaml` (auto-run into `maps/sim_maze.*` when
+    absent), so it is already a finished, perfect `.pgm`+`.yaml` — nothing to save, and `Ctrl-b m` there would
+    only round-trip `map_server`'s own map back to disk. Delete `maps/sim_maze.*` to force a regenerate after
+    editing a world; `maps/sim_*` is gitignored precisely because it is regenerable.
+  - **What the sim cannot tell you:** whether the Pi 4 can actually run any of it. The laptop is far faster,
+    and the notes record that the Pi couldn't keep up with async slam_toolbox and that arm64
+    `nav2_mppi_controller` SIGILLs on Cortex-A72. Sim validates algorithms and parameters, never CPU budget.
+- `tools/run_mission.py` — the **competition mission runner** (added 2026-08-01), plain `python3` like the
+  rest of `tools/`, so the same file runs in sim and on the robot. Sends `NavigateToPose` goals in sequence:
+  checkpoint, then goal. It exists because rule 五.2 makes the 中繼區 a **mandatory waypoint** — a single
+  start→goal Nav2 goal would take the shortest path and may skip it, scoring the run as a failure. Reads
+  coordinates from a `sim/worlds/*.yaml` (`--world`) or from `--waypoint x,y[,yaw]`; `--dry-run` prints the
+  route without needing Nav2 installed. Its header argues why maze algorithms (right-hand rule, DFS,
+  flood-fill) belong **above** Nav2 as a `NavigateToPose` client and why, given that the rules let you map
+  the field first, they are unnecessary here — a global planner on a known map already yields the optimal
+  path. Same conclusion as `notes/nav2_tuning.md`.
 - `docs/` — reference documents: the competition rulebook PDF (`2026TIRT-迷宮機器人挑戰賽.pdf`), the OminiBotHV
   serial-protocol/kinematics spec PDF (a copy of the one in `OminiBotHV-master/communication/`), and field-test
   screenshots. As of the 2026-07-25 "reorganize the structure" commit, all the Chinese design/field-test notes

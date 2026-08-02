@@ -21,4 +21,15 @@ __pycache__/
 # 地圖進版控(2026-07-28 改):/maps 原本被忽略,結果兩台機器的 maps/ 內容不同,
 # 而「在 Pi 建圖、在 PC 導航」必然把圖存到錯的那一台。.pgm 是二進位但很小
 # (168x104 的圖約 17KB),值得換取兩台同步 + 比賽用定版地圖有備份。
+#
+# 例外:模擬產生的地圖不進版控 —— 它是 sim/worlds/*.yaml 算出來的衍生檔,
+# 場地檔一改就過期,而 sim/gcs_sim.sh --nav 發現缺檔會自動重新產生。
+/maps/sim_*.pgm
+/maps/sim_*.yaml
+
+# tf2_tools view_frames 產生的 TF 樹圖。每次執行都是新檔名(jazzy 會帶時間戳),
+# 而且是當下 TF 狀態的快照 —— 隨手 debug 的產物,不該累積在版控裡。
+/frames*.gv
+/frames*.pdf
+
 /OminiBotHV-master

@@ -43,16 +43,32 @@ for _a in "$@"; do
     esac
 done
 
-source /opt/ros/humble/setup.bash
+# 實機(Pi 與比賽筆電)都是 humble;開發/模擬機可能是別的發行版,所以找不到
+# humble 時往下找一個可用的,而不是直接失敗。
+if [ -f /opt/ros/humble/setup.bash ]; then
+    source /opt/ros/humble/setup.bash
+else
+    for _d in jazzy iron rolling kilted; do
+        [ -f "/opt/ros/$_d/setup.bash" ] && { source "/opt/ros/$_d/setup.bash"; break; }
+    done
+fi
 if [ -f "$HOME/ros2_ws/install/setup.bash" ]; then source "$HOME/ros2_ws/install/setup.bash"; fi
 
-# DDS 角色由本機的固定別名 IP 自動判斷。別名沒掛上時 setup_dds.sh 會報錯且不設定
-# 任何東西 —— 那就別硬跑,不然只會得到一整包永遠收不到 /scan 的 nav2 節點
-# (lifecycle 會 active,看起來很健康,實際上什麼都收不到)。
-source "$_here/dds/setup_dds.sh"
-if [ -z "${FASTRTPS_DEFAULT_PROFILES_FILE:-}" ]; then
-    echo "run_nav2: DDS 沒設定好(見上面訊息),中止。" >&2
-    exit 1
+# TIRT_SIM=1 由 sim/gcs_sim.sh 設定 —— 模擬是單機,不需要 Discovery Server /
+# 固定別名 IP / interfaceWhiteList(那一整套是為了「Pi 和筆電跨 WiFi」而存在的)。
+# 這個逃生門讓模擬直接跑這支腳本本身,而不是複製一份 —— 你在模擬裡練的操作,
+# 比賽當天是同一個指令。
+if [ "${TIRT_SIM:-0}" = 1 ]; then
+    echo "run_nav2: TIRT_SIM=1 -> 單機模擬模式,略過 DDS 設定。"
+else
+    # DDS 角色由本機的固定別名 IP 自動判斷。別名沒掛上時 setup_dds.sh 會報錯且不設定
+    # 任何東西 —— 那就別硬跑,不然只會得到一整包永遠收不到 /scan 的 nav2 節點
+    # (lifecycle 會 active,看起來很健康,實際上什麼都收不到)。
+    source "$_here/dds/setup_dds.sh"
+    if [ -z "${FASTRTPS_DEFAULT_PROFILES_FILE:-}" ]; then
+        echo "run_nav2: DDS 沒設定好(見上面訊息),中止。" >&2
+        exit 1
+    fi
 fi
 
 # --- 解析地圖引數 -----------------------------------------------------------
@@ -77,7 +93,8 @@ map_file="$(cd "$(dirname "$map_file")" && pwd)/$(basename "$map_file")"   # →
 # 這樣卡住的:Pi 上有 201_self_test,PC 上只有另一張,run_nav2.sh 直接說找不到。
 #
 # 只在「本機缺這個檔」時才複製,所以不可能蓋掉本機任何東西;對 Pi 是唯讀。
-if [ ! -f "$map_file" ] && [ -f "$_here/net/tirt_net.conf" ]; then
+# 模擬模式沒有 Pi 可以抓(TIRT_SIM=1),跳過整段 —— 否則會白等一次 ssh 逾時。
+if [ ! -f "$map_file" ] && [ "${TIRT_SIM:-0}" != 1 ] && [ -f "$_here/net/tirt_net.conf" ]; then
     source "$_here/net/tirt_net.conf"
     # 自己就是 Pi 的話不用抓(在 Pi 上單機除錯時會走到這裡)。
     if ! ip -4 -o addr show scope global 2>/dev/null | grep -q " ${TIRT_PI_IP}/"; then
@@ -159,6 +176,42 @@ echo "     teleop 閒著時會以 20Hz 持續發零速度到 /cmd_vel(為了餵 
 echo "     和 nav2 的指令交錯打進來 → 車子抽一下停一下,症狀很像硬體故障。"
 echo "     要改回手動駕駛時再 ./robotctl up teleop。"
 echo
+
+# --- 發行版 plugin 名稱相容(humble 用 "/",jazzy 之後改成 "::")------------
+# Nav2 在 humble → jazzy 之間把 pluginlib 的宣告名稱從 `pkg/ClassName` 改成
+# `pkg::ClassName`。config/nav2_params.yaml 是以**實機的 humble 為準**寫的,
+# 所以在 jazzy 的模擬機上 planner_server 一 configure 就死:
+#
+#   FATAL [planner_server]: Failed to create global planner. Exception: ... the
+#   class nav2_navfn_planner/NavfnPlanner ... does not exist. Declared types are
+#   nav2_navfn_planner::NavfnPlanner ...
+#   ERROR [lifecycle_manager_navigation]: Failed to bring up all requested nodes.
+#
+# 這個症狀很難認:map_server 和 amcl 已經 active(地圖看得到、粒子雲也在),
+# 只有 planner 之後的節點是 unconfigured,RViz 只會說「navigate_to_pose action
+# server is not available. Is the initial pose set?」—— 把人引去一直重設 2D Pose
+# Estimate,但真正的原因和初始位置一點關係也沒有。
+#
+# 作法是「偵測、然後產生一份改過的暫存參數檔」,而不是改 yaml 本身:比賽用的是
+# humble,那份檔案必須維持 humble 正確。偵測方式是問「這台機器上裝的 navfn 到底
+# 宣告了哪個名字」,而不是寫死發行版清單 —— 換到再新的發行版也不用再改這裡。
+if [[ " $* " != *" params_file:="* ]]; then
+    _navfn_share="$(ros2 pkg prefix nav2_navfn_planner 2>/dev/null)/share/nav2_navfn_planner"
+    if [ -d "$_navfn_share" ] && ! grep -rqs 'nav2_navfn_planner/NavfnPlanner' "$_navfn_share"; then
+        _src_params="$(ros2 pkg prefix car_assemble_description 2>/dev/null)/share/car_assemble_description/config/nav2_params.yaml"
+        if [ -f "$_src_params" ]; then
+            _patched="${XDG_RUNTIME_DIR:-/tmp}/tirt_nav2_params_${ROS_DISTRO:-unknown}.yaml"
+            echo "run_nav2: 偵測到這台的 Nav2 不是 humble 形式,改寫參數檔以求相容"
+            echo "          (config/nav2_params.yaml 本身不動,它必須維持實機 humble 正確)。"
+            if python3 "$_here/tools/nav2_params_compat.py" "$_src_params" "$_patched"; then
+                echo "run_nav2: 相容參數檔 -> $_patched"
+                set -- "$@" "params_file:=$_patched"
+            else
+                echo "run_nav2: 參數改寫失敗,照原檔跑(預期會在 planner_server 掛掉)。" >&2
+            fi
+        fi
+    fi
+fi
 
 echo "run_nav2: 使用地圖 $map_file"
 echo "run_nav2: RViz 開起來以後 → 車子位置不對就用 '2D Pose Estimate' 校正,"

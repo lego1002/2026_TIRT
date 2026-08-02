@@ -188,7 +188,17 @@ if ! tmux has-session -t "$SESSION" 2>/dev/null; then
     echo "     bash --rcfile $RC -i" >&2
     exit 1
 fi
-tmux set-option -t "$SESSION" -g history-limit 20000 >/dev/null
+# prefix 明確指定成 C-b,不吃使用者的全域設定。
+# 這支底下所有說明文字都寫「Ctrl-b m 存地圖」「Ctrl-b 0/1/2 切視窗」,而 Pi 上的
+# tirt session 刻意設成 C-a(pi/robot_tmux.sh),就是為了巢狀時兩層錯開。使用者的
+# ~/.tmux.conf 如果把全域 prefix 改成 C-a(很常見的設定),這裡不指定就會變成
+# 兩層都是 C-a —— 內外層搶同一個鍵,而且畫面上印的每一行操作說明都是錯的。
+tmux set-option -t "$SESSION" prefix C-b >/dev/null
+tmux set-option -t "$SESSION" -u prefix2 >/dev/null 2>&1
+tmux bind-key -T prefix C-b send-prefix >/dev/null
+# history-limit 是 session 選項,原本多寫了一個 -g 變成設全域 —— 會把使用者
+# ~/.tmux.conf 裡調高的值(例如 50000)在整個 server 上覆蓋掉。拿掉 -g。
+tmux set-option -t "$SESSION" history-limit 20000 >/dev/null
 tmux set-option -t "$SESSION" mouse on >/dev/null
 # 視窗裡的程式(或 shell 本身)掛掉時保留視窗與畫面,而不是讓它連同錯誤訊息一起消失。
 # 沒有這行的話,唯一的視窗一死整個 session 就跟著不見,現象是「跑完什麼都沒有」,
