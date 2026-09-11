@@ -139,7 +139,7 @@ slam_toolbox 不是只維護「一張圖」,而是維護一張**圖(graph)**:
 
 ### 4.4 佔據柵格地圖(Occupancy Grid)
 
-`/map` 是一張格子圖,每格 `resolution`(本專案 0.05m = 5cm)見方,值有三種:
+`/map` 是一張格子圖,每格 `resolution`(本專案 0.025m = 2.5cm,2026-09-12 前是 0.05)見方,值有三種:
 - **佔據**(黑,100):有牆;
 - **空閒**(白,0):雷射穿過去了,確定沒東西;
 - **未知**(灰,-1):還沒看過。
@@ -268,6 +268,112 @@ RViz(PC 端,Fixed Frame = map)訂閱 /map、/scan、/robot_description、TF、/o
 ```bash
 ./run_robot.sh laser_x:=0.02 laser_y:=-0.01
 ```
+
+---
+
+### 問題 6:陀螺儀零點漂移 —— 「前面好好的、後面才歪」的直接成因(2026-08-30)⭐
+
+**症狀**:同一間房間、同樣走法,建圖**有時候**好、有時候後半段整個轉掉一個角度。
+前段牆壁乾淨筆直,愈到後面愈歪,而且**每次歪的量不一樣**。
+
+**成因**:`use_gyro_heading=true` 時 odom 的朝向是把板子的原始 gyro-Z 積分出來的,
+但 MEMS 陀螺靜止時**不會讀到 0**,永遠有一個零點偏移(bias),而且這個偏移
+**每次開機都不同、還會隨晶片溫度變**。舊版 driver 直接積分原始讀值,等於把這個
+偏移當成真的轉動一路累加。
+
+**實測(2026-08-30,車完全靜止、馬達停住)**:
+
+| 這次開機 | 靜止時 raw `gyro_z` 平均 | 積出來的假轉動 |
+| --- | --- | --- |
+| 第 1 次 | −0.000447 rad/s | **−1.6 °/分** → 5 分鐘建圖 −7.8° |
+| 第 2 次 | −0.000350 rad/s | −1.2 °/分 |
+| 第 3 次 | −0.000225 rad/s | −0.8 °/分 |
+
+三次數值差快兩倍 —— 這就是「有機率會歪」的來源。
+
+**為什麼它專門毀後半段**:這個誤差**和「經過多久」成正比,和「走多遠」無關**。
+車停在原地讓你思考、調整、等 RViz 的那幾分鐘,odom 的朝向都在偷偷轉。
+開場前 30 秒幾乎看不出來,第 8 分鐘就是好幾度。而 slam_toolbox 的
+`minimum_travel_heading: 0.17`(≈9.7°)是拿 odom 算的,所以站著不動久了
+甚至會被誤判成「車轉了」而插入一張新 scan。
+
+**修法(已進 code)**:`driver_node.py` 新增 `gyro_auto_bias`(預設 `true`)——
+啟動時趁車靜止量 40 筆求平均當零點,之後只要車是停的就用 30 秒時間常數的
+指數平均慢慢跟著溫度修。朝向積分會**等零點量完才開始**,不然等於把偏移永久烙進去。
+
+**驗收(修完實測)**:靜止 121 秒,odom 朝向漂移從 −2.5° 降到 **±0.15° 以內**,
+而且不再是單向的斜坡,是有界的隨機遊走。
+
+要自己重量一次:
+
+```bash
+# 車放著別動,起 driver,盯 60 秒
+ros2 run ominibot_driver ominibot_driver_node
+ros2 topic echo /odom --field pose.pose.orientation   # yaw 應該幾乎不動
+```
+啟動時 driver 會直接印出量到的零點,例如
+`gyro zero offset = -0.000350 rad/s (-1.2 deg/min of heading drift removed; 40 samples)`。
+想比對舊行為就 `./run_robot.sh gyro_auto_bias:=false`。
+
+---
+
+### 問題 7:序列埠 desync 造成 /odom 凍結數秒(2026-08-30)⭐
+
+**症狀**:建圖時偶爾一段路的牆壁整片錯位、或轉彎處出現硬折角,但 CPU、WiFi 都正常。
+
+**成因**:板子的回授串流會在 driver **寫指令**時掉幾張 frame(實測 cmd_rate 20 Hz 下
+約 5%,`bcc` 全 0 —— 是分幀跑掉,不是位元被干擾)。舊的 `read_feedback()` 遇到
+非 `0x7b` 的位元組只丟掉**一個 byte** 就 return,回到 Python 迴圈再讀下一個。
+純腳本裡這樣還追得上,但在 ROS 節點裡這個迴圈要跟 executor 搶 GIL,
+追不上 640 B/s 的串流 → kernel buffer 愈積愈多 → 變成**正回饋的雪崩**。
+
+實測到最糟的一次:**5 秒內 455 次 desync、只有 4 張好 frame** —— 等於
+`/odom` 和 `odom->base_link` TF 凍結了五秒。車還在走,SLAM 卻拿到一個不動的 odom prior,
+折角就是這樣來的。
+
+**修法(已進 code)**:`ominibot_hv.py` 的 `read_feedback()` 改成用
+`ser.read_until(b'\x7b')` **一次跳到下一個起始位元組**。`stats['desync']` 現在
+是「事件數」不是「壞掉的 byte 數」,另外新增 `stats['resync_bytes']` 記丟掉幾個 byte。
+
+**驗收**:同樣條件下 desync 從 ~40 次/5 秒降到 **~4 次/5 秒**,好 frame 維持 94/5 秒
+(≈19 Hz),121 秒內**不再出現任何 >3 秒的 /odom 空窗**。
+
+**殘留**:ROS 節點下仍會偶發一段 5~10 秒的 frame rate 減半(20 Hz → 9 Hz),
+時間點隨機。→ **2026-09-11 找到成因了,見問題 8:指令 timer 和板子回饋的拍頻。**
+
+### 問題 8:指令寫入撞到板子回饋 TX → 拍頻式 desync → odom 把那段位移整段丟掉(2026-09-11)⭐
+
+**症狀**:bringup 才兩分鐘、車一開始走,RViz 裡的 scan 就離牆 ~20 cm、有一整段掃描點
+落在地圖外,「一開始就漂」。車停著量卻什麼都正常:`/odom` 20 Hz、`/scan` 10 Hz、
+`map->odom` 50 Hz 零斷流,靜止 30 s 朝向只漂 0.007°,Pi/PC 時鐘同步。
+
+**成因鏈**:
+1. **拍頻(beat)**:driver 用自己的 20 Hz timer 寫指令,板子用自己的 20 Hz 送回饋。板子 TX 到一半
+   收到指令就把那張 frame 截斷(所以 `desync` 一堆、`bcc=0`)。兩個 20 Hz 差一點點,相位慢慢滑過去,
+   對齊的那幾秒每張都撞 → **每 90~110 s 爆一次、一次 5~10 s、最糟 90.7% bad**,車停著也一樣。
+   證據:driver 自己 fd 讀 `TIOCGICOUNT`,81% bad 的視窗裡 kernel `uart overrun=0` —— byte 不是在
+   Pi 裡丟的,是板子根本沒送完。(問題 7 說的「driver 寫指令時掉 ~5% frame」就是同一件事的平均值。)
+2. **odom**:5 s 只剩 7 張好 frame → 兩筆之間 dt ≈ 0.7 s,超過 `_publish()` 寫死的 0.5 s 上限
+   → **那段位移直接歸零不積分**。車在走、odom 不動 → slam_toolbox 看不到 travel 不插 scan、
+   RViz 把「現在的 scan」畫在「舊的 pose」上,就是截圖那個錯位。
+
+**修法(已進 code)**:
+- **`cmd_sync_to_feedback`(預設 true)**:指令改成在 read thread 收到一張好 frame 之後立刻寫,
+  永遠落在兩張 frame 之間 47 ms 的空檔;原本的 `cmd_rate` timer 降為備援(回饋斷兩個週期才接手,
+  watchdog 停車指令照樣送得出去)。**驗收:重啟後 4 分鐘 `/odom` 每 10 s 剛好 200 筆、最大間隔 0.116 s、
+  零 `degraded` WARN**(改之前同樣時間內會爆 2~3 次)。
+- **`odom_max_gap`(預設 1.0 s)** 取代寫死的 0.5;間隔內用前後兩筆速度**平均**積分(梯形法),
+  超過才丟;車在動而回饋斷超過 0.25 s 會 WARN `feedback gap X.XXs while moving`。
+- **診斷**:`serial link degraded` WARN 現在附帶 kernel 的 UART 計數(`uart overrun=… buf_overrun=…
+  frame=…`,免 sudo)和 `vcgencmd get_throttled` 的旗標。`overrun>0` = byte 在 Pi 裡丟的(電源/負載);
+  `overrun=0` 而 desync 一堆 = 板子端。沒 sudo 想看累計值:`sudo cat /proc/tty/driver/ttyAMA` 的 `oe:`。
+
+**順便抓到的另一件事(還沒修,硬體)**:`vcgencmd get_throttled` = `0x50000`,kernel 15 分鐘 38 次
+`hwmon: Undervoltage detected!`,每 20~40 s 一次、車停著也一樣 —— Pi 的 5 V 長期掉到 4.63 V 以下,
+韌體反覆把 CPU 砍到 600 MHz。這次證明它**不是** desync 的原因,但它會拖慢 Pi、有機會讓 SD 卡壞掉或
+直接重開機。要 5.1 V ≥ 3 A 的 buck、線粗且短;光達 C1 從 USB 抽 ~0.5 A,考慮獨立供電。驗收:跑完一趟
+`vcgencmd get_throttled` 回 `0x0`。driver 啟動時 since-boot 旗標已亮會 WARN 一次,之後每分鐘最多提醒一次。
+建圖時也**不要在 Pi 上開 VS Code remote / Claude Code**(當天量到合計吃掉 ~半顆核心)。
 
 ---
 
@@ -417,18 +523,20 @@ ros2 bag play ~/bags/maze_run1 --clock
 | `laser_x` / `laser_y` | 0.014 / -0.014(**CAD 推算,未校**) | **光達外參**平移。錯 → 一轉彎牆就變雙線(問題 5)。影響量級僅 1.4cm |
 | `laser_yaw` | **2.9146(=167°,實測)** | 光達幾乎反裝。填 0 會讓地圖扇形塗抹 —— 這是 2026-07-25 破圖的元凶 |
 | `vx_sign`/`vy_sign`/`wz_sign` | 1 / -1 / -1 | 軸向正負(已實機驗證,勿動;動了 odom 和指令一起反,地圖直接鏡像) |
-| `cmd_vel_timeout` | 0.5s | watchdog:斷線自動停車 |
+| `cmd_vel_timeout` | 1.0s | watchdog:斷線自動停車 |
+| `odom_max_gap` | 1.0s | 回饋兩筆間隔多久以內仍積分(前後速度平均);超過就丟並 WARN(問題 8) |
+| `cmd_sync_to_feedback` | true | 指令緊跟在每張回饋 frame 後面寫,消除拍頻 desync(問題 8)。false=舊的獨立 timer |
 
 ### slam_toolbox(`mapper_params_online_async.yaml`)
 
 | 參數 | 現值 | 作用 / 什麼時候動它 |
 |---|---|---|
-| `resolution` | 0.05 | 地圖格 5cm。迷宮牆薄想更細可到 0.03(Pi CPU 變重),**odom 沒校準前調細只會更糊** |
+| `resolution` | **0.025**(2026-09-12,原 0.05) | 地圖格 2.5cm。44 cm 迷宮格配 5 cm 格牆像積木、看不出 scan 貼不貼牆;SLAM 在 PC 跑所以 CPU 不是問題。**odom 沒校準前調細只會更糊** |
 | `minimum_travel_distance` | 0.2 | 每走 20cm 收一個節點。調小 → 修正更頻繁、模型跳動更細碎但地圖更緊;小迷宮可 0.1 |
 | `minimum_travel_heading` | 0.17 (≈10°) | 每轉 10° 收一個節點。旋轉是誤差大戶,可調小到 0.1 |
 | `correlation_search_space_dimension` | 0.5 | scan matching 搜索窗(m)。**odom 校準後不用動**;odom 爛時的止痛藥(加大),副作用是慢+迷宮易配錯 |
 | `max_laser_range` | 12.0 | C1 標稱極限。迷宮內牆近,不是瓶頸 |
-| `map_update_interval` | 2.0 | /map 重渲染週期(秒)。純顯示頻率,不影響精度 |
+| `map_update_interval` | 1.0(2026-09-12,原 2.0) | /map 重渲染週期(秒)。純顯示頻率,不影響精度 |
 | `do_loop_closing` | true | 迷宮必開 |
 | `loop_search_maximum_distance` | 3.0 | 迴環搜索半徑。迷宮小,夠用 |
 | `loop_match_minimum_chain_size` | 10 | 防假迴環門檻。迷宮走廊長很像,若出現「地圖被亂拉」考慮調大到 12–15 |
@@ -440,6 +548,8 @@ ros2 bag play ~/bags/maze_run1 --clock
 |---|---|---|
 | Odometry → Keep | 50 → 1 | 不留箭頭軌跡(除錯時可調回 50 看 odom 漂移量) |
 | Odometry → Shaft/Head Length | 0.3/0.1 → 0.08/0.03 | 箭頭原本比車長 2.6 倍 |
+| TF → Show Names / Show Arrows / Marker Scale | true/true/1 → false/false/0.3 | 六個 frame 的名字和 1 m 的軸把 15 cm 的車整個蓋住(2026-09-12) |
+| LaserScan → Size | 0.01 → 0.02 | 配合 0.025 m 地圖,點太小看不出貼不貼牆 |
 
 ---
 

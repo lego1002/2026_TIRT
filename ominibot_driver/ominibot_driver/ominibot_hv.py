@@ -62,11 +62,28 @@ class OminiBotHV:
                  pos_ki=1050,
                  pos_kd=0,
                  vel_kp=3000,
-                 vel_ki=1050):
+                 vel_ki=1050,
+                 open_retry_s=0.0):
         # exclusive=True (POSIX) so a second instance fails loudly with "port
         # busy" instead of silently sharing the port and corrupting each other's
         # reads -- that contention was killing odom and breaking the SLAM map.
-        self.ser = serial.Serial(port, baud, timeout=1, exclusive=True)
+        #
+        # open_retry_s > 0 keeps retrying a busy port for that long before
+        # giving up. Callers that own the base (driver_node) pass a few seconds:
+        # oled_status_node reads the pack voltage off this same UART whenever no
+        # driver is running, holding it exclusively for up to ~1.5 s, and a
+        # bringup started inside that window would otherwise die on the spot.
+        # A genuinely stuck second driver still fails, just a few seconds later.
+        # Default 0.0 keeps the old fail-fast behaviour for diagnostic callers.
+        deadline = time.monotonic() + open_retry_s
+        while True:
+            try:
+                self.ser = serial.Serial(port, baud, timeout=1, exclusive=True)
+                break
+            except Exception:
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.5)
         self.robot_mode = divisor_mode
         self._write_lock = threading.Lock()
 
@@ -79,7 +96,8 @@ class OminiBotHV:
         self.stats = {
             'good': 0,        # valid 32-byte streaming frame
             'bcc_fail': 0,    # framed correctly but checksum wrong -> corrupted bits
-            'desync': 0,      # unexpected byte where a marker was expected
+            'desync': 0,      # unexpected byte where a marker was expected (one per event)
+            'resync_bytes': 0,  # bytes thrown away hunting for the next 0x7b
             'timeout': 0,     # nothing on the wire within the read timeout
             'short': 0,       # frame truncated mid-read
             'reply': 0,       # valid 14-byte readback reply
@@ -241,8 +259,24 @@ class OminiBotHV:
             self.stats['timeout'] += 1
             return None
         if start != b'\x7b':
+            # Landed mid-frame. Skip forward to the next start byte in ONE
+            # read_until() rather than returning and discarding one byte per
+            # call. Measured 2026-08-30: the board drops a few frames whenever
+            # the driver writes a command (~6% at cmd_rate 20 Hz, bcc always 0,
+            # so it is framing, not corruption). Byte-at-a-time recovery costs
+            # one Python loop iteration per junk byte, and inside the ROS node
+            # that loop competes for the GIL with the executor -- it fell behind
+            # the 640 B/s stream, the kernel buffer grew, and a burst that lasts
+            # ~40 bytes here turned into a self-sustaining cascade: 455 desyncs
+            # and 4 good frames in 5 s, i.e. /odom froze for five seconds while
+            # the robot was still driving. A stale odom->base_link TF for that
+            # long is exactly what puts a permanent kink in a SLAM map.
             self.stats['desync'] += 1
-            return None  # mid-frame byte; resync on the next call
+            junk = self.ser.read_until(b'\x7b')
+            self.stats['resync_bytes'] += len(junk)
+            if not junk.endswith(b'\x7b'):
+                return None      # timed out before any start byte showed up
+            # else: fall through, we are positioned just after a start byte
 
         marker = self.ser.read(1)
         if len(marker) < 1:

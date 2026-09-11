@@ -14,8 +14,13 @@ A watchdog re-sends the last /cmd_vel at a fixed rate and commands zero if no co
 has arrived within cmd_vel_timeout, so the base stops if the teleop link drops.
 """
 
+import fcntl
 import math
+import shutil
+import struct
+import subprocess
 import threading
+import time
 
 import rclpy
 from geometry_msgs.msg import Quaternion, Twist, TransformStamped
@@ -46,13 +51,31 @@ class OminiBotDriver(Node):
         # replaced the old /dev/ominibot USB (FTDI) symlink after the board's
         # USB terminal broke. Override with the `port` param if wired elsewhere.
         self.declare_parameter('port', '/dev/serial0')
+        # How long to keep retrying a busy port before giving up. oled_status
+        # reads pack voltage off this same UART while no driver runs and holds
+        # it exclusively for up to ~1.5 s; without this, a bringup that starts
+        # inside that window dies instead of waiting it out. See ominibot_hv.
+        self.declare_parameter('port_open_retry_s', 6.0)
         self.declare_parameter('baud', 115200)
         self.declare_parameter('odom_frame', 'odom')
         self.declare_parameter('base_frame', 'base_link')
         self.declare_parameter('imu_frame', 'imu_link')
         self.declare_parameter('publish_odom_tf', True)
         self.declare_parameter('publish_imu', True)
-        self.declare_parameter('cmd_rate', 20.0)       # Hz, command re-send rate
+        self.declare_parameter('cmd_rate', 20.0)       # Hz, command re-send rate (fallback timer)
+        # Send each command right after a feedback frame lands, instead of from
+        # a free-running timer. The board streams feedback at its own 20 Hz and
+        # cannot take a command mid-transmit: a write that overlaps its TX
+        # truncates that frame (desync, bcc stays 0). Two 20 Hz clocks that are
+        # not quite equal drift through each other, so the collisions come in
+        # BEATS -- measured 2026-09-11: a 5-10 s burst of up to 90 % bad frames
+        # every ~100 s, robot idle or not, with the kernel's UART overrun
+        # counter at 0 (so the bytes were never sent, not lost on the Pi).
+        # Writing just after a frame ends puts the command in the quiet 47 ms
+        # before the next one and removes the beat entirely. The cmd_rate timer
+        # stays as a fallback so the watchdog stop still goes out if feedback
+        # ever dies.
+        self.declare_parameter('cmd_sync_to_feedback', True)
         # Watchdog window. Raised 0.5 -> 1.0 on 2026-07-27: when /cmd_vel comes from
         # the laptop over WiFi, an ordinary transport stall of a few hundred ms was
         # enough to trip the watchdog, zero the base, and then resume -- which is
@@ -164,8 +187,35 @@ class OminiBotDriver(Node):
         self.declare_parameter('use_gyro_heading', True)
         self.declare_parameter('gyro_z_sign', 1.0)   # flip to -1.0 if odom yaw turns the wrong way
         self.declare_parameter('gyro_scale', 1.014)   # 2026-07-25 analyze_bag: odom 145.3 deg vs scan truth 137.1 deg
+        # Gyro zero-offset (bias) tracking. A MEMS gyro does not read exactly 0
+        # at rest, and the offset changes with every power-up and with die
+        # temperature. Measured on this board 2026-08-30, robot completely
+        # stationary, 1236 samples over 60 s: raw gyro_z averaged -0.000447 rad/s
+        # -> the integrated odom heading rotated -1.6 deg/min while nothing moved.
+        # That error grows with ELAPSED TIME, not with distance driven, which is
+        # exactly the "map is fine at the start and bends later, and it differs
+        # every run" symptom. So measure the offset at startup and keep tracking
+        # it whenever the base is idle. Set gyro_auto_bias:=false to go back to
+        # the raw reading.
+        self.declare_parameter('gyro_auto_bias', True)
+        self.declare_parameter('gyro_bias_init_samples', 40)   # ~2 s at 20 Hz
+        self.declare_parameter('gyro_bias_tau', 30.0)          # idle re-estimate time constant [s]
+        self.declare_parameter('gyro_bias_still_time', 0.5)    # must be idle this long before trusting a sample [s]
+        # Longest gap between two feedback frames that odom will still integrate
+        # across. Feedback normally arrives at 20 Hz; when the serial link
+        # degrades (2026-09-11: 90% of frames lost for 5 s at a time while the
+        # Pi was browning out) the gaps stretch to ~0.7 s. The old hard-coded
+        # 0.5 s cap threw that motion away entirely, so the robot drove on while
+        # /odom stood still -- SLAM saw no travel, inserted nothing, and the live
+        # scan sat 20 cm off the walls in RViz right after the first drive.
+        # Integrating across the gap with the mean of the two bracketing
+        # velocities is far closer to the truth than zero. Anything longer than
+        # this is dropped and logged: guessing across a multi-second hole is
+        # worse than a visible kink.
+        self.declare_parameter('odom_max_gap', 1.0)            # [s]
 
         port = self.get_parameter('port').value
+        port_open_retry_s = float(self.get_parameter('port_open_retry_s').value)
         baud = self.get_parameter('baud').value
         self.odom_frame = self.get_parameter('odom_frame').value
         self.base_frame = self.get_parameter('base_frame').value
@@ -173,6 +223,9 @@ class OminiBotDriver(Node):
         self.publish_odom_tf = self.get_parameter('publish_odom_tf').value
         self.publish_imu = self.get_parameter('publish_imu').value
         cmd_rate = self.get_parameter('cmd_rate').value
+        self.cmd_sync_to_feedback = self.get_parameter('cmd_sync_to_feedback').value
+        self._cmd_period = 1.0 / cmd_rate
+        self._last_send_mono = 0.0
         self.cmd_vel_timeout = self.get_parameter('cmd_vel_timeout').value
         self.sx = self.get_parameter('linear_x_sign').value
         self.sy = self.get_parameter('linear_y_sign').value
@@ -184,6 +237,11 @@ class OminiBotDriver(Node):
         self.use_gyro_heading = self.get_parameter('use_gyro_heading').value
         self.gyro_sign = self.get_parameter('gyro_z_sign').value
         self.gyro_scale = self.get_parameter('gyro_scale').value
+        self.gyro_auto_bias = self.get_parameter('gyro_auto_bias').value
+        self.gyro_bias_init_n = self.get_parameter('gyro_bias_init_samples').value
+        self.gyro_bias_tau = self.get_parameter('gyro_bias_tau').value
+        self.gyro_bias_still_time = self.get_parameter('gyro_bias_still_time').value
+        self.odom_max_gap = float(self.get_parameter('odom_max_gap').value)
 
         wheel_diameter = self.get_parameter('wheel_diameter_mm').value
         motor_direct = self.get_parameter('motor_direct').value
@@ -219,7 +277,8 @@ class OminiBotDriver(Node):
                               encoder_ppr=encoder_ppr,
                               gear_ratio=gear_ratio,
                               pos_kp=pos_kp, pos_ki=pos_ki, pos_kd=pos_kd,
-                              vel_kp=vel_kp, vel_ki=vel_ki)
+                              vel_kp=vel_kp, vel_ki=vel_ki,
+                              open_retry_s=port_open_retry_s)
 
         # --- state ------------------------------------------------------------
         self._cmd_lock = threading.Lock()
@@ -227,6 +286,13 @@ class OminiBotDriver(Node):
         self._last_cmd_time = self.get_clock().now()
         self.x = self.y = self.theta = 0.0
         self._last_odom_time = None
+        self._prev_vel = None        # (lx, ly, az) of the previous feedback frame
+        # Gyro bias state. _bias_ready gates heading integration: integrating
+        # before the offset is known just bakes it in permanently.
+        self.gyro_bias = 0.0
+        self._bias_init = []
+        self._bias_ready = not (self.use_gyro_heading and self.gyro_auto_bias)
+        self._still_since = None
 
         # --- ROS interfaces ---------------------------------------------------
         # Depth 1: only the newest Twist matters. A deeper queue just means that
@@ -252,8 +318,10 @@ class OminiBotDriver(Node):
         self._batt_decim = 0
         self.tf_broadcaster = TransformBroadcaster(self)
 
-        # Watchdog / command re-send timer (runs in the executor thread).
-        self.create_timer(1.0 / cmd_rate, self._send_cmd)
+        # Watchdog / command re-send timer (runs in the executor thread). With
+        # cmd_sync_to_feedback the read thread does the sending and this only
+        # fires when feedback has been missing for two periods.
+        self.create_timer(1.0 / cmd_rate, self._send_cmd_timer)
 
         # Serial link health. The board<->Pi link moved from USB (FTDI) to the
         # Pi's GPIO UART on 2026-07-19; if noise corrupts a command frame the
@@ -264,6 +332,24 @@ class OminiBotDriver(Node):
         # (tools/motor_diag.py needs the driver stopped, so it cannot watch a
         # teleop run). Silent while the link is clean.
         self._last_stats = dict(self.bot.stats)
+        # Kernel-side UART counters (TIOCGICOUNT on the driver's own fd, no
+        # root needed) and the Pi firmware's power flags, so the WARN below can
+        # tell "bytes were lost in the Pi's UART FIFO" from "the board sent
+        # garbage". Added 2026-09-11 while chasing the desync beats: the Pi was
+        # logging "Undervoltage detected!" every 20-40 s and the first guess was
+        # FIFO overrun under CPU throttling. The counter said overrun=0 through
+        # an 81 %-bad window, which is what pointed at the board's TX instead
+        # (see cmd_sync_to_feedback). Kept: the brown-outs are real on their
+        # own, and this is the only place they show up without a laptop.
+        self._last_icount = self._uart_icount()
+        self._vcgencmd = shutil.which('vcgencmd')
+        self._last_throttled = self._pi_throttled()
+        self._last_power_warn = 0.0
+        if self._last_throttled and self._last_throttled & 0xF0000:
+            self.get_logger().warn(
+                f'Pi firmware reports power trouble since boot '
+                f'({self._throttled_text(self._last_throttled)}) -- '
+                'a sagging 5 V rail throttles the CPU and loses UART bytes')
         self.create_timer(5.0, self._log_link_health)
 
         # Feedback read loop (blocking serial reads -> own thread).
@@ -277,7 +363,14 @@ class OminiBotDriver(Node):
             self._cmd = (msg.linear.x, msg.linear.y, msg.angular.z)
             self._last_cmd_time = self.get_clock().now()
 
+    def _send_cmd_timer(self):
+        if (self.cmd_sync_to_feedback
+                and time.monotonic() - self._last_send_mono < 2.0 * self._cmd_period):
+            return      # the read thread is sending in step with the feedback
+        self._send_cmd()
+
     def _send_cmd(self):
+        self._last_send_mono = time.monotonic()
         stale = (self.get_clock().now() - self._last_cmd_time).nanoseconds * 1e-9
         with self._cmd_lock:
             lx, ly, az = self._cmd
@@ -294,24 +387,98 @@ class OminiBotDriver(Node):
             self.get_logger().warn(f'robot_speed write failed: {exc}')
 
     # -- serial link health --------------------------------------------------
+    _TIOCGICOUNT = 0x545D   # linux/serial.h: struct serial_icounter_struct
+
+    def _uart_icount(self):
+        """Kernel per-port error counters {frame, overrun, parity, brk,
+        buf_overrun}, or None if the driver does not support the ioctl.
+        `overrun` = the UART FIFO overflowed before the ISR drained it (bytes
+        lost inside the Pi -- interrupt latency, i.e. CPU throttling / load);
+        `buf_overrun` = the tty buffer overflowed (this process not reading)."""
+        try:
+            buf = fcntl.ioctl(self.bot.ser.fileno(), self._TIOCGICOUNT,
+                              bytes(20 * 4))
+            v = struct.unpack('20i', buf)
+        except (OSError, AttributeError):
+            return None
+        return {'frame': v[6], 'overrun': v[7], 'parity': v[8], 'brk': v[9],
+                'buf_overrun': v[10]}
+
+    def _pi_throttled(self):
+        """`vcgencmd get_throttled` bitmask, or None off a Pi / on failure.
+        Bit 0 under-voltage NOW, 1 ARM freq capped NOW, 2 throttled NOW,
+        3 soft temp limit NOW; bits 16-19 = the same, has occurred since boot."""
+        if not self._vcgencmd:
+            return None
+        try:
+            out = subprocess.run([self._vcgencmd, 'get_throttled'],
+                                 capture_output=True, text=True, timeout=1.0)
+            return int(out.stdout.strip().split('=')[1], 16)
+        except Exception:  # noqa: BLE001 - diagnostics must never take the driver down
+            return None
+
+    @staticmethod
+    def _throttled_text(flags):
+        names = ['under-voltage', 'arm-freq-capped', 'throttled', 'soft-temp-limit']
+        now = [n for i, n in enumerate(names) if flags & (1 << i)]
+        past = [n for i, n in enumerate(names) if flags & (1 << (16 + i))]
+        parts = []
+        if now:
+            parts.append('NOW: ' + ','.join(now))
+        if past:
+            parts.append('since boot: ' + ','.join(past))
+        return f'0x{flags:x}' + (' ' + '; '.join(parts) if parts else ' ok')
+
     def _log_link_health(self):
         now = dict(self.bot.stats)
         delta = {k: now[k] - self._last_stats.get(k, 0) for k in now}
         self._last_stats = now
         bad = delta['bcc_fail'] + delta['desync'] + delta['short']
         total = bad + delta['good']
+
+        icount = self._uart_icount()
+        uart = ''
+        fifo_overrun = False
+        if icount and self._last_icount:
+            d = {k: icount[k] - self._last_icount[k] for k in icount}
+            uart = (f' | uart overrun={d["overrun"]} buf_overrun={d["buf_overrun"]}'
+                    f' frame={d["frame"]}')
+            fifo_overrun = d['overrun'] > 0
+        self._last_icount = icount
+
+        throttled = self._pi_throttled()
+        power = ''
+        if throttled is not None and (
+                throttled & 0xF
+                or (self._last_throttled is not None
+                    and (throttled & 0xF0000) != (self._last_throttled & 0xF0000))):
+            # Sampled once per 5 s and a brown-out lasts 2-4 s, so this catches
+            # roughly every other one. On a chronically sagging supply that is
+            # a line every 5 s, so the standalone "link clean, but" warning is
+            # rate-limited to once a minute; a degraded-link line always
+            # carries it.
+            power = f' | power: {self._throttled_text(throttled)}'
+        self._last_throttled = throttled
+
         if total == 0:
             self.get_logger().warn(
                 'serial link silent: no feedback frames for 5s '
-                '(board powered? MODE_ON? TX/RX swapped?)')
+                f'(board powered? MODE_ON? TX/RX swapped?){uart}{power}')
             return
         if bad / total > 0.02:
             self.get_logger().warn(
                 f'serial link degraded: {bad}/{total} bad frames '
                 f'({100.0 * bad / total:.1f}%) in 5s [bcc={delta["bcc_fail"]} '
                 f'desync={delta["desync"]} short={delta["short"]} '
-                f'timeout={delta["timeout"]}] -- corrupted command frames make '
-                'the board stop the motors, which feels like stuttering')
+                f'timeout={delta["timeout"]}]{uart}{power} -- '
+                + ('UART FIFO overrun: bytes lost inside the Pi (CPU starved -- '
+                   'check the 5 V supply, then Pi load), not on the wire'
+                   if fifo_overrun
+                   else 'corrupted command frames make the board stop the motors, '
+                        'which feels like stuttering'))
+        elif power and time.monotonic() - self._last_power_warn > 60.0:
+            self._last_power_warn = time.monotonic()
+            self.get_logger().warn(f'link clean, but{power}')
 
     # -- feedback -> odom / imu ---------------------------------------------
     def _read_loop(self):
@@ -325,12 +492,62 @@ class OminiBotDriver(Node):
                 continue
             if not (self._running and rclpy.ok()):
                 break
+            # The board has just finished transmitting: send now, before the
+            # (slower) odom publish, so the write lands well clear of its next
+            # frame. See cmd_sync_to_feedback.
+            if self.cmd_sync_to_feedback:
+                self._send_cmd()
             try:
                 self._publish(data)
             except Exception as exc:  # noqa: BLE001
                 if not rclpy.ok():
                     break  # context torn down mid-publish during shutdown
                 self.get_logger().warn(f'publish failed: {exc}')
+
+    def _track_gyro_bias(self, data, now, dt):
+        """Measure and follow the gyro's zero offset while the base is idle.
+
+        "Idle" is judged from the board's own wheel feedback (lx/ly/az all
+        exactly 0.0 when stopped) plus the absence of a live non-zero command,
+        and it has to hold for gyro_bias_still_time before any sample counts --
+        a gyro rings for a moment after the wheels stop, and averaging that ring
+        into the offset would be worse than not correcting at all.
+
+        Startup: average gyro_bias_init_samples readings, then unfreeze heading.
+        After that: a slow exponential average (gyro_bias_tau) so the offset can
+        follow die temperature over a 30-minute session without ever reacting
+        fast enough to eat a real rotation.
+        """
+        with self._cmd_lock:
+            commanded = self._cmd
+        stale = (now - self._last_cmd_time).nanoseconds * 1e-9
+        idle = (commanded == (0.0, 0.0, 0.0)) or stale > self.cmd_vel_timeout
+        still = (idle and data['lx'] == 0.0
+                 and data['ly'] == 0.0 and data['az'] == 0.0)
+
+        if not still:
+            self._still_since = None
+            return
+        if self._still_since is None:
+            self._still_since = now
+            return
+        if (now - self._still_since).nanoseconds * 1e-9 < self.gyro_bias_still_time:
+            return
+
+        if not self._bias_ready:
+            self._bias_init.append(data['gyro_z'])
+            if len(self._bias_init) >= self.gyro_bias_init_n:
+                self.gyro_bias = sum(self._bias_init) / len(self._bias_init)
+                self._bias_ready = True
+                self.get_logger().info(
+                    f'gyro zero offset = {self.gyro_bias:+.6f} rad/s '
+                    f'({math.degrees(self.gyro_bias) * 60.0:+.1f} deg/min of '
+                    f'heading drift removed; {len(self._bias_init)} samples)')
+            return
+
+        if dt > 0.0:
+            alpha = min(dt / self.gyro_bias_tau, 1.0)
+            self.gyro_bias += alpha * (data['gyro_z'] - self.gyro_bias)
 
     def _publish(self, data):
         now = self.get_clock().now()
@@ -340,23 +557,58 @@ class OminiBotDriver(Node):
         # (sign + measured scale, since the raw feedback over-reports ~6x). Yaw
         # rate from the raw gyro (immune to mecanum slip); fall back to the
         # scaled wheel az only if gyro heading is disabled.
+        dt = 0.0
+        gap = 0.0
+        if self._last_odom_time is not None:
+            gap = (now - self._last_odom_time).nanoseconds * 1e-9
+            dt = gap if 0.0 < gap <= self.odom_max_gap else 0.0
+        self._last_odom_time = now
+
         lx = self.sx * data['lx'] * self.odom_lin_scale
         ly = self.sy * data['ly'] * self.odom_lin_scale
         if self.use_gyro_heading:
-            az = self.gyro_sign * data['gyro_z'] * self.gyro_scale
+            if self.gyro_auto_bias:
+                self._track_gyro_bias(data, now, dt)
+            az = self.gyro_sign * (data['gyro_z'] - self.gyro_bias) * self.gyro_scale
         else:
             az = self.sz * data['az'] * self.odom_ang_scale
 
-        # Dead-reckon odom from body velocities.
-        if self._last_odom_time is not None:
-            dt = (now - self._last_odom_time).nanoseconds * 1e-9
-            if 0.0 < dt < 0.5:  # ignore first sample and pathological gaps
-                mid = self.theta + 0.5 * az * dt
-                self.x += (lx * math.cos(mid) - ly * math.sin(mid)) * dt
-                self.y += (lx * math.sin(mid) + ly * math.cos(mid)) * dt
-                self.theta = math.atan2(math.sin(self.theta + az * dt),
-                                        math.cos(self.theta + az * dt))
-        self._last_odom_time = now
+        # A gap of more than a few missed frames means the serial link dropped
+        # feedback while the robot may well have been moving. Say so -- a
+        # silent hole here is exactly the "map is fine, then suddenly the scan
+        # is 20 cm off the wall" symptom, and it is otherwise invisible.
+        moving = (any(abs(v) > 1e-3 for v in (lx, ly, az))
+                  or (self._prev_vel is not None
+                      and any(abs(v) > 1e-3 for v in self._prev_vel)))
+        if gap > 0.25 and moving:
+            if dt > 0.0:
+                self.get_logger().warn(
+                    f'feedback gap {gap:.2f}s while moving -- integrated with '
+                    'the mean of the bracketing velocities (see serial link stats)')
+            else:
+                self.get_logger().warn(
+                    f'feedback gap {gap:.2f}s while moving exceeds odom_max_gap '
+                    f'{self.odom_max_gap:.1f}s -- that motion is LOST from /odom')
+
+        # Dead-reckon odom from body velocities, trapezoidal (mean of the
+        # previous and current frame's velocities over the interval between
+        # them). Held off until the gyro zero offset is known (a couple of
+        # seconds of standing still at startup) -- the robot is not moving
+        # during that window anyway, and integrating early would bake the
+        # offset into every pose that follows.
+        if dt > 0.0 and self._bias_ready:
+            if self._prev_vel is not None:
+                vx = 0.5 * (lx + self._prev_vel[0])
+                vy = 0.5 * (ly + self._prev_vel[1])
+                wz = 0.5 * (az + self._prev_vel[2])
+            else:
+                vx, vy, wz = lx, ly, az
+            mid = self.theta + 0.5 * wz * dt
+            self.x += (vx * math.cos(mid) - vy * math.sin(mid)) * dt
+            self.y += (vx * math.sin(mid) + vy * math.cos(mid)) * dt
+            self.theta = math.atan2(math.sin(self.theta + wz * dt),
+                                    math.cos(self.theta + wz * dt))
+        self._prev_vel = (lx, ly, az)
 
         odom = Odometry()
         odom.header.stamp = stamp

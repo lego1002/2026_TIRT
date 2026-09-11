@@ -10,6 +10,8 @@
   4. 底盤(預設 use_fake_odom=false):跑 ominibot_driver(收 /cmd_vel、發 /odom + 真 odom->base_link TF);
         use_fake_odom=true → 改發假的 odom->base_link 靜態 TF(無硬體純看模型時用)
   5. slam_toolbox(async)—— 讀本 repo config/ 的 mapper 參數(預設不啟動,SLAM 在 PC 端跑)
+  6. oled_status —— 車上 SPI OLED 狀態顯示(預設不啟動)。比賽當天沒有筆電接著,
+        電池電量/光達是否還活著只能靠這片螢幕看,見 use_oled。
 
 RViz 一律不在這裡開;請在另一台 Ubuntu PC 上用相同 ROS_DOMAIN_ID 連過來看
 (Pi 端一鍵用 repo 根目錄的 run_robot.sh;PC 端一鍵用 run_rviz.sh。
@@ -21,6 +23,7 @@ RViz 一律不在這裡開;請在另一台 Ubuntu PC 上用相同 ROS_DOMAIN_ID 
   ros2 launch car_assemble_description robot_bringup.launch.py use_fake_odom:=true   # 沒接底盤,只看模型/光達
   ros2 launch car_assemble_description robot_bringup.launch.py ominibot_port:=/dev/ttyS0    # 底盤改接到別的 UART 時
   ros2 launch car_assemble_description robot_bringup.launch.py laser_x:=0.02 laser_y:=-0.01 # 校光達外參時(不必 rebuild)
+  ros2 launch car_assemble_description robot_bringup.launch.py use_oled:=true          # 車上 OLED 顯示電池/狀態
 """
 import os
 
@@ -47,6 +50,12 @@ def generate_launch_description():
 
     use_slam = LaunchConfiguration('use_slam')
     use_fake_odom = LaunchConfiguration('use_fake_odom')
+    use_oled = LaunchConfiguration('use_oled')
+    oled_controller = LaunchConfiguration('oled_controller')
+    oled_dc = LaunchConfiguration('oled_dc')
+    oled_rst = LaunchConfiguration('oled_rst')
+    batt_full_v = LaunchConfiguration('batt_full_v')
+    batt_empty_v = LaunchConfiguration('batt_empty_v')
     ominibot_port = LaunchConfiguration('ominibot_port')
     vx_sign = LaunchConfiguration('vx_sign')
     vy_sign = LaunchConfiguration('vy_sign')
@@ -72,6 +81,9 @@ def generate_launch_description():
     use_gyro_heading = LaunchConfiguration('use_gyro_heading')
     gyro_z_sign = LaunchConfiguration('gyro_z_sign')
     gyro_scale = LaunchConfiguration('gyro_scale')
+    gyro_auto_bias = LaunchConfiguration('gyro_auto_bias')
+    odom_max_gap = LaunchConfiguration('odom_max_gap')
+    cmd_sync_to_feedback = LaunchConfiguration('cmd_sync_to_feedback')
     cmd_vel_timeout = LaunchConfiguration('cmd_vel_timeout')
     cmd_vel_best_effort = LaunchConfiguration('cmd_vel_best_effort')
     laser_x = LaunchConfiguration('laser_x')
@@ -87,6 +99,20 @@ def generate_launch_description():
                               description='是否在「Pi 本機」啟動 slam(預設 false,SLAM 改在 PC 跑;true=單機 fallback)'),
         DeclareLaunchArgument('use_fake_odom', default_value='false',
                               description='false=跑真底盤 ominibot_driver(預設,一鍵開底盤);true=只發假 odom 靜態 TF(無硬體純看模型時用)'),
+        # 車上 SPI OLED 狀態顯示。預設 false:這片螢幕是選配硬體,沒插的時候
+        # luma 開 /dev/spidev0.0 會直接丟例外把整個 bringup 拉掉。
+        DeclareLaunchArgument('use_oled', default_value='false',
+                              description='車上 SPI OLED 顯示電池/狀態(需接 OLED 模組)'),
+        DeclareLaunchArgument('oled_controller', default_value='ssd1306',
+                              description='OLED 控制器型號:ssd1306 或 sh1106'),
+        DeclareLaunchArgument('oled_dc', default_value='24',
+                              description='OLED DC 腳位(BCM 編號,實體 pin 18)'),
+        DeclareLaunchArgument('oled_rst', default_value='25',
+                              description='OLED RST 腳位(BCM 編號,實體 pin 22)'),
+        DeclareLaunchArgument('batt_full_v', default_value='12.6',
+                              description='電量條滿電電壓(預設 3S LiPo,請量測實際電池)'),
+        DeclareLaunchArgument('batt_empty_v', default_value='10.5',
+                              description='電量條沒電電壓(預設 3S LiPo 安全下限)'),
         DeclareLaunchArgument('ominibot_port', default_value='/dev/serial0',
                               description='OminiBotHV 底盤板序列埠(接 Pi GPIO UART=/dev/serial0;改接別的 UART 時可設 /dev/ttyS0)'),
         # 這三個預設值已對齊 driver_node.py 硬體實測後的正負號;若之後方向再有變,兩邊要一起改。
@@ -159,6 +185,24 @@ def generate_launch_description():
                               description='陀螺 Z 正負號(odom 轉向反了就設 -1.0)。'),
         DeclareLaunchArgument('gyro_scale', default_value='1.014',
                               description='陀螺積分倍率(2026-07-25 tools/analyze_bag.py:odom 報 145.3° vs scan 真值 137.1° → 1.075×0.9435)。'),
+        # 陀螺零點漂移(bias)。2026-08-30 實測:車完全靜止 60 秒,raw gyro_z 平均 -0.000447 rad/s,
+        # 積出來的 odom 朝向自己轉了 -1.6°/分鐘 —— 誤差跟「經過多久」成正比,跟「走多遠」無關,
+        # 這正是「一開始好好的、後面才歪」而且「每次歪的程度不一樣」的成因(MEMS 零點每次開機、
+        # 每個溫度都不同)。driver 現在會在啟動時量一次、之後只要車停著就慢慢跟著修。
+        DeclareLaunchArgument('gyro_auto_bias', default_value='true',
+                              description='true=自動量測並扣掉陀螺零點漂移(建議);false=用原始讀值。'),
+        # 底盤回饋斷多久以內 odom 還照樣積分。2026-09-11 實測:Pi 欠壓(Undervoltage detected!)→ CPU 被砍到
+        # 600 MHz → UART FIFO 溢位 → 5 秒內 90% 的回饋 frame 壞掉,兩筆好 frame 之間拉到 ~0.7 s;
+        # 舊的寫死 0.5 s 上限會把那段位移整段丟掉 → 車在走、/odom 不動 → SLAM 不插 scan、RViz 的 scan
+        # 離牆 20 cm。現在 1.0 s 以內用前後兩筆速度平均積分,超過才丟並且 WARN。
+        DeclareLaunchArgument('odom_max_gap', default_value='1.0',
+                              description='回饋兩筆之間隔多久以內 odom 仍積分(秒);超過就丟掉該段並 WARN。'),
+        # 指令改成「收到一張回饋 frame 就馬上寫」而不是獨立 20 Hz timer。板子 TX 到一半收到指令會把那張
+        # frame 截斷(desync、bcc=0);Pi 的 timer 和板子的 20 Hz 差一點點,相位慢慢滑過去就形成
+        # 「每 ~100 s 爆 5~10 s、最糟 90% 壞 frame」的拍頻(2026-09-11 實測,車停著也一樣,
+        # kernel UART overrun=0)。跟著回饋寫就永遠落在 frame 之間的空檔。
+        DeclareLaunchArgument('cmd_sync_to_feedback', default_value='true',
+                              description='true=指令緊跟在每張回饋 frame 之後送(消除拍頻 desync);false=獨立 cmd_rate timer。'),
         # /cmd_vel 的 watchdog 與 QoS —— 2026-07-27 為了「WiFi 抖動害底盤一頓一頓」開出來。
         # 舊的 0.5s 太短:命令從筆電經 WiFi 過來,傳輸卡個幾百毫秒 watchdog 就把底盤歸零、
         # 下一筆到了又衝出去,操作者看到的就是一頓一頓。根治手段是把 teleop 搬到 Pi 上跑
@@ -280,6 +324,9 @@ def generate_launch_description():
                 'use_gyro_heading': ParameterValue(use_gyro_heading, value_type=bool),
                 'gyro_z_sign': ParameterValue(gyro_z_sign, value_type=float),
                 'gyro_scale': ParameterValue(gyro_scale, value_type=float),
+                'gyro_auto_bias': ParameterValue(gyro_auto_bias, value_type=bool),
+                'odom_max_gap': ParameterValue(odom_max_gap, value_type=float),
+                'cmd_sync_to_feedback': ParameterValue(cmd_sync_to_feedback, value_type=bool),
                 'cmd_vel_timeout': ParameterValue(cmd_vel_timeout, value_type=float),
                 'cmd_vel_best_effort': ParameterValue(cmd_vel_best_effort, value_type=bool),
             }],
@@ -294,5 +341,24 @@ def generate_launch_description():
             output='screen',
             parameters=[slam_config, {'use_sim_time': False}],
             condition=IfCondition(use_slam),
+        ),
+
+        # 6. 車上 SPI OLED 狀態顯示(選配)。訂 /battery_voltage + /odom + /scan,
+        #    畫電池電壓/電量條、車體速度、以及 scan/odom 的到達頻率。
+        #    比賽規則不准遠端運算,現場沒有筆電可以下 ros2 topic echo,
+        #    「電池快沒電」和「光達掛了」只能靠這片螢幕在地板上看出來。
+        Node(
+            package='ominibot_driver',
+            executable='oled_status',
+            name='oled_status',
+            output='screen',
+            parameters=[{
+                'controller': ParameterValue(oled_controller, value_type=str),
+                'gpio_dc': ParameterValue(oled_dc, value_type=int),
+                'gpio_rst': ParameterValue(oled_rst, value_type=int),
+                'batt_full_v': ParameterValue(batt_full_v, value_type=float),
+                'batt_empty_v': ParameterValue(batt_empty_v, value_type=float),
+            }],
+            condition=IfCondition(use_oled),
         ),
     ])

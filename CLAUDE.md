@@ -52,7 +52,10 @@ human-editable text.
     itself. Launch args: `use_slam` (**default false** as of 2026-07-21 — SLAM moved to the PC, see
     `slam_pc.launch.py` below; set `true` for a single-machine fallback), `use_fake_odom` (default false — the
     real `ominibot_driver` runs by default; set `true` for hardware-free model/lidar viewing), and
-    `ominibot_port` (default `/dev/serial0`, the Pi GPIO UART). It also declares (and forwards to
+    `ominibot_port` (default `/dev/serial0`, the Pi GPIO UART), and `use_oled` (**default false** — the
+    OLED is optional hardware, and with no panel wired `luma` raises on opening `/dev/spidev0.0`, which
+    would take the whole bringup down with it; `oled_controller`/`oled_dc`/`oled_rst`/`batt_full_v`/
+    `batt_empty_v` tune it without a rebuild). It also declares (and forwards to
     `ominibot_driver`) all of that node's calibration params — `vx_sign`/`vy_sign`/`wz_sign`,
     `wheel_diameter_mm`/`wheel_space_mm`/`axle_space_mm`, `encoder_ppr`/`gear_ratio`, the position/velocity PID
     gains (`pos_kp`/`pos_ki`/`pos_kd`/`vel_kp`/`vel_ki`), `odom_linear_scale`/`odom_angular_scale`, and
@@ -113,13 +116,18 @@ human-editable text.
     and enabled by default, plus the TB3-only "Bumper Hit" display disabled.
   - `rviz/view_robot.rviz` — saved RViz2 config for the **PC-side viewer** in the two-machine setup (Fixed
     Frame `map`, RobotModel on `/robot_description`, LaserScan `/scan`, Map `/map` with Durability set to
-    **Transient Local** to receive the latched map, Odometry with `Keep: 1` and small arrows — the previous
+    **Transient Local** to receive the latched map, Odometry with `Keep: 1` and small arrows, TF with
+  names/arrows off and `Marker Scale` 0.3 (2026-09-12 — six frame labels and 1 m axes buried the 15 cm
+  robot), LaserScan point size 0.02 — the previous
     `Keep: 50` + 0.4 m arrows visually buried the 0.15 m robot; temporarily set `Keep` back up to visualize
     odometry error as a breadcrumb trail when calibrating — and TF). Note this is distinct from
     `display.launch.py`, which still ships no saved config and needs its displays added by hand.
 - `config/` — **the single home for every tunable YAML** (consolidated here 2026-07-28 at the operator's
   request: params, like `maps/`, are what actually gets edited between field runs, so they should not be
-  buried inside a package). `nav2_params.yaml`, `mapper_params_online_async.yaml`, and the leftover ROS 1
+  buried inside a package). `nav2_params.yaml`, `mapper_params_online_async.yaml` (map `resolution`
+  **0.025** and `map_update_interval` 1.0 as of 2026-09-12 — 5 cm cells made 44 cm maze cells look like
+  building blocks and hid whether the scan sat on the wall; SLAM runs on the PC so the extra cells are
+  free; Nav2's costmaps deliberately stay at 0.05 and resample the static map), and the leftover ROS 1
   `joint_names_CAR_ASSEMBLE_URDF.yaml` (dead — `ros2_control` uses a different format entirely, so it needs a
   rewrite rather than a conversion once `ros2_control` is wired up). `car_assemble_description/CMakeLists.txt`
   installs `../config/` into the package share, so launch files keep resolving params via
@@ -140,7 +148,40 @@ human-editable text.
 - `ominibot_driver/` — the actual ROS 2 (`ament_python`) driver node wrapping the board (written 2026-07-13;
   symlinked into `~/ros2_ws/src/` like `car_assemble_description`). `ominibot_driver/ominibot_hv.py` is a
   self-contained, de-duplicated copy of the vendor protocol class (so the package doesn't depend on the
-  `OminiBotHV-master/example` path) — **keep the `time.sleep()` delays in its `__init__`**: without the 0.5s
+  `OminiBotHV-master/example` path). Its `read_feedback()` **resyncs with `read_until(b'\x7b')`, not one
+  discarded byte per call** (changed 2026-08-30): the board drops ~5% of feedback frames whenever the
+  driver writes a command (framing, not corruption — `bcc_fail` stays 0), and byte-at-a-time recovery
+  inside the ROS node lost its GIL race against the executor, letting the kernel buffer run away into a
+  self-sustaining cascade — worst measured case **455 desyncs and 4 good frames in 5 s, i.e. `/odom` and
+  the `odom->base_link` TF frozen for five seconds while the robot kept driving**, which puts a permanent
+  kink in the SLAM map. `stats['desync']` now counts *events*, with `stats['resync_bytes']` for the bytes
+  skipped. The residual "frame rate halves for 5-10 s at random intervals" was solved on 2026-09-11: it is
+  a **beat between two 20 Hz clocks**. The driver re-sent commands from its own 20 Hz timer while the board
+  streams feedback at its own 20 Hz; a command that lands mid-transmit truncates that feedback frame
+  (`desync`, `bcc` stays 0), and as the two phases drift through each other every frame collides for
+  5-10 s roughly every 100 s — **up to 90.7 % bad frames, robot idle or not**. Proof it is the board's TX
+  and not the Pi: the kernel's own `uart overrun=0` through an 81 %-bad window. With 7 good frames in 5 s
+  the gap between odom samples passed `_publish()`'s old hard-coded 0.5 s cap and **that motion was
+  discarded outright** — the robot drove on while `/odom` stood still, SLAM saw no travel and inserted
+  nothing, and the live scan sat 20 cm off the walls in RViz two minutes into the run. Three things
+  changed: (1) **`cmd_sync_to_feedback`** (default true) — the read thread writes the command right after
+  each good feedback frame, in the quiet 47 ms before the next one, and the `cmd_rate` timer only takes
+  over if feedback has been missing for two periods (so the watchdog stop still goes out). Verified: 4 min
+  after the change, exactly 200 `/odom` msgs per 10 s, max gap 0.116 s, zero `degraded` WARNs, where the
+  same window used to hold 2-3 bursts. (2) `odom_max_gap` (default 1.0 s) replaces the 0.5 cap and
+  integration is now trapezoidal (mean of the bracketing velocities), with a `feedback gap X.XXs while
+  moving` WARN whenever feedback stalls >0.25 s under motion. (3) The `serial link degraded` WARN appends
+  the kernel's UART counters (`uart overrun=… buf_overrun=… frame=…`, via `TIOCGICOUNT` on the driver's
+  fd — no sudo) and the firmware power flags from `vcgencmd get_throttled`, so `overrun>0` says "lost
+  inside the Pi" and `overrun=0` says "the board never sent it". **Separate, still open, hardware:** that
+  same session found the Pi chronically browning out — `get_throttled` `0x50000`, 38 kernel
+  `Undervoltage detected!` in 15 min, every 20-40 s, robot idle — which is *not* what broke the serial
+  link but does throttle the CPU and risks SD corruption/reboots. Needs a 5.1 V ≥3 A buck with short
+  thick wires (the lidar pulls ~0.5 A over USB); acceptance is `get_throttled` = `0x0` after a full run.
+  The driver warns once at startup if the since-boot flags are set and at most once a minute after. Don't
+  run VS Code remote / Claude Code on the Pi during a mapping run either; together they ate half a core.
+  See
+  `notes/SLAM_learning_note.md` 問題 7 and 問題 8. Also — **keep the `time.sleep()` delays in its `__init__`**: without the 0.5s
   after `forced_stop` and 0.1s between config frames the firmware never starts streaming feedback (verified on
   hardware). `driver_node.py` subscribes `/cmd_vel` → `robot_speed(lx,ly,az)` (with a watchdog that zeros the
   base after `cmd_vel_timeout` — **1.0 s and BEST_EFFORT depth-1 as of 2026-07-27**, see "Where teleop runs,
@@ -168,6 +209,11 @@ human-editable text.
   chassis; exposed so they can be lowered from the command line to fight vibration on the lighter N20 build
   without a rebuild). These are written into the board's firmware once at node startup (`\x7b\x24`/`\x7b\x23`
   config frames), so changing them requires restarting the bringup.
+  `port_open_retry_s` (default 6.0, added 2026-09-06) keeps retrying a busy port instead of dying on the
+  spot — `oled_status`'s standalone battery read holds the same UART exclusively for up to ~1.5 s when no
+  driver is running, and a bringup starting inside that window used to fail outright. A genuinely stuck
+  second driver still fails, just six seconds later; `run_robot.sh`'s `pkill` + `fuser -k` is what clears
+  that. `OminiBotHV(open_retry_s=…)` defaults to 0.0, so diagnostic callers (`motor_diag.py`) still fail fast.
   **Hardware-verified caveat:** the board's feedback path ignores that geometry/motor config entirely and
   always reports body velocity using a fixed internal calibration for the CircusPi reference robot — a
   config readback confirms the values above are stored on the board, yet changing them does not move the
@@ -178,7 +224,16 @@ human-editable text.
   of the wheel-derived yaw rate, because mecanum roller slip destroys the latter (a real 360° spin
   over-reports as ~2270° of wheel yaw, vs. ~350° from the gyro); the IMU quaternion itself can't substitute
   since it's 6-axis with no magnetometer, so yaw is frozen. `gyro_z_sign`/`gyro_scale` fine-tune that gyro
-  integration. Calibration procedures for all of the above (drive 1 m / spin 720° and compare `/odom`) are in
+  integration, and `gyro_auto_bias` (default `true`, added 2026-08-30) removes its **zero offset**:
+  measured on hardware with the robot completely still, raw `gyro_z` averaged -0.000447 / -0.000350 /
+  -0.000225 rad/s on three consecutive power-ups — i.e. the odom frame silently rotated 0.8-1.6 deg per
+  *minute of elapsed time*, differently every run. That is the direct cause of "the map is clean at the
+  start and bends later, and it goes wrong only sometimes": the error scales with time, not distance, so
+  it accrues even while the robot stands still. The node now averages 40 samples at startup (heading
+  integration is **held off until it has**, or the offset gets baked in permanently) and keeps tracking it
+  with a 30 s exponential average whenever the base is idle; stationary heading drift over 121 s went from
+  -2.5 deg to within +/-0.15 deg. Details and the re-measurement procedure: `notes/SLAM_learning_note.md`
+  問題 6. Calibration procedures for all of the above (drive 1 m / spin 720° and compare `/odom`) are in
   `notes/SLAM_learning_note.md` §7. **The same fixed board-internal calibration also mis-scales incoming
   `/cmd_vel` — the *other* half of the bug** (found 2026-07-25, `tools/step_response.py`): a commanded
   0.15 m/s produced only ~0.019 m/s of real motion, an ~8× shortfall, confirmed by both `/odom` and direct
@@ -207,6 +262,65 @@ human-editable text.
     and turn speed "couldn't change"), `k`/space stop. Pad and turn keys are mutually exclusive (pressing one zeroes the other
     axis). It re-publishes the current `Twist` every loop (≥10 Hz) to keep the driver's `cmd_vel` watchdog
     fed. Run with `ros2 run ominibot_driver mecanum_teleop`.
+  - `ominibot_driver/oled_status_node.py` (`oled_status` console script) — drives the **SPI OLED bolted to
+    the robot** as an on-board status readout (added 2026-08-30). Subscribes `/battery_voltage`, `/odom` and
+    `/scan`; draws the alias IP, pack voltage + a charge bar, body velocity, and the *arrival* rates of scan
+    and odom. It exists for the battery-only run: competition rules forbid remote compute, so at the venue
+    there is no laptop to `ros2 topic echo` from, and "pack is flat" / "lidar died" are otherwise invisible
+    until the robot misbehaves on the floor. The IP line is the one check you fundamentally cannot run from
+    the PC — a robot that booted without the `10.77.0.2` alias is exactly a robot the PC cannot see.
+    **Battery without the driver** (2026-09-06): `/battery_voltage` only exists while `ominibot_driver`
+    runs, so on a freshly booted robot — exactly the boot-service case below — the one number you want
+    before touching anything read `--`. The board streams its feedback frames on the UART continuously
+    (verified: 20 Hz of `7b 00 …` with no init sent), so when nothing publishes the topic this node reads
+    the pack voltage straight off `/dev/serial0` itself. That poll is deliberately **read-only** — it never
+    sends the vendor init sequence, so it cannot overwrite the driver's calibrated geometry/PID config and
+    cannot move the base; if the board happens not to be streaming the panel just keeps showing `--`.
+    The port is `exclusive=True`, so the two readers must not overlap: the poll is skipped while the topic
+    is live, while a publisher exists, and — the check that actually matters — while an
+    `/ominibot_driver_node` **process** merely exists, because the driver opens the port about a second
+    *before* it creates the publisher, so waiting for the publisher would be too late. It holds the port for
+    at most `batt_listen_s` (1.5 s) every `batt_poll_period` (10 s), and the remaining race is closed from
+    the other side by `OminiBotHV`'s new `open_retry_s` (driver param `port_open_retry_s`, default 6 s).
+    Tunables: `batt_serial_fallback` (set false to disable entirely), `batt_port`, `batt_baud`,
+    `batt_poll_period`, `batt_listen_s`, and `batt_stale_after` (60 s — a reading older than that reverts to
+    `--` rather than leaving a dead board looking like a healthy pack). Verified on hardware 2026-09-06:
+    12.17-12.24 V read standalone, and a driver started underneath it opened the port with no retry needed.
+    Design details worth not re-deriving: rates come from **arrival timestamps, not message headers**, so a
+    stalled publisher reads 0.0 Hz instead of freezing at its last value; all three subscriptions are
+    **BEST_EFFORT depth 1**, because a best-effort subscriber matches both reliable and best-effort
+    publishers while the reverse silently fails to match, and because a slow SPI redraw must never
+    back-pressure the lidar. The `batt_full_v`/`batt_empty_v` defaults (12.6/10.5, a 3S LiPo) are
+    **assumptions** — measure the real pack or the bar is decorative; a hardware read on 2026-08-30 showed
+    12.482 V, consistent with a nearly-full 3S. `destroy_node`'s farewell frame catches **BaseException**,
+    not Exception: it runs during SIGINT teardown and a second Ctrl-C lands inside that ~1 KB SPI write,
+    raising `KeyboardInterrupt`, which `Exception` does not catch — that escaped as a traceback and a -2
+    exit that `ros2 launch` reports as "process has died [ERROR]" on a perfectly normal shutdown.
+    Python deps are **pip `--user`, not apt**: `luma.oled`, `RPi.GPIO`, `spidev` (the apt packages
+    `python3-pil`/`python3-pip`/`libjpeg-dev`/`libopenjp2-7` were already present on the Pi). `dtparam=spi=on`
+    is already set in `/boot/firmware/config.txt`, and `lego` is in `dialout`, which owns `/dev/spidev0.0`
+    and `/dev/gpiomem` — so **no sudo is needed at runtime**.
+    **It also runs at boot, independently of bringup** (2026-09-06): `pi/oled_boot.sh` +
+    `pi/install_oled_service.sh` install a systemd service `tirt-oled` (`sudo ./pi/install_oled_service.sh`,
+    `--uninstall` to remove) so a freshly-booted Pi lights the panel with no laptop, no ssh and no
+    `gcs.sh` — previously the screen stayed black until someone ran bringup with `use_oled:=true`, and a
+    black panel is indistinguishable from "Pi didn't boot" / "OLED is dead". systemd rather than a
+    `robot_tmux.sh` window precisely *because* it is the opposite of bringup: nothing about it wants
+    watching or single-piece restarts, it wants to be alive unattended and to come back on its own
+    (`Restart=always`). Details worth not re-deriving: the unit is generated by the installer heredoc
+    rather than tracked as a `.service` file (its paths and `User=` are machine-specific — `SUDO_USER`,
+    not root, since `luma` is a pip `--user` install and SPI/GPIO access comes from `dialout`);
+    `KillSignal=SIGINT` because the node only does its clean "ROS stopped" frame on SIGINT, and a SIGTERM
+    death leaves the last live frame frozen on the glass looking healthy; `oled_boot.sh` must **not**
+    `set -u` (`/opt/ros/humble/setup.bash` reads an unset `AMENT_TRACE_SETUP_FILES` and dies on line 8);
+    and it waits up to 45 s for the `10.77.0.2` alias, then **falls back to `ROS_LOCALHOST_ONLY=1` and
+    lights the panel anyway** — a battery-only boot with no wifi is exactly when the IP line is worth
+    having, so showing the DHCP address (or `no-net`) beats showing nothing; a background watcher then
+    SIGINTs it once the alias does appear, letting `Restart=always` bring it back with the DDS profile
+    applied. Keep `use_oled` **false** in bringup while this service is installed: SPI has no mutual
+    exclusion, so two processes drawing the same panel just garbles it (`sudo systemctl stop tirt-oled`
+    before using bringup's copy or `tools/oled_test.py`). Day-to-day: `systemctl status tirt-oled`,
+    `journalctl -u tirt-oled -f`, and `sudo systemctl restart tirt-oled` after a `colcon build`.
 - `net/` — the **venue-portability layer** (added 2026-07-27). The whole point: stop chasing DHCP IPs.
   - `net/tirt_net.conf` — the single source of truth for the two fixed alias IPs (`TIRT_PI_IP=10.77.0.2`,
     `TIRT_PC_IP=10.77.0.1`), the ssh user/repo path, DDS port, and the Pi tmux session name. Every value is
@@ -292,6 +406,12 @@ human-editable text.
   anything; read-only on the Pi; skipped when the local machine holds the Pi's alias IP). If that fails the
   error explicitly says maps are gitignored, so `git pull` will not bring one over.
 - `tools/` — standalone diagnostic scripts (plain `python3 foo.py`, no colcon package, no rebuild).
+  `oled_test.py` is the **OLED bring-up test**, deliberately ROS-free: it draws a box and text so the
+  panel itself is proven before any node is blamed. Pass `sh1106` to try the other controller. Note
+  **SPI is write-only — the script exiting 0 does not mean the panel lit up**, so judge it by eye, not
+  by exit code. Two traps it documents: an SPI OLED never appears in `i2cdetect` no matter how it is
+  wired (these modules label their pins `SDA`/`SCL` but speak SPI — `SDA`=MOSI, `SCL`=SCLK), and a
+  floating `RST` holds the controller in permanent reset so it stays black however correct the code is.
   `odom_check.py` prints live cumulative displacement/heading from `/odom` in metres and **degrees**
   (far more readable than echoing quaternions) and, on Ctrl-C, computes the `odom_linear_scale` /
   `gyro_scale` you should set — run the 1 m and 360° tests with both scales forced to `1.0` so the
@@ -560,6 +680,21 @@ notes that matter:
 - The session's tmux prefix is **`Ctrl-a`**, because the laptop session (`Ctrl-b`) nests it.
 - `robot_tmux.sh up` waits up to 30 s for the `10.77.0.2` alias before starting anything — without it the
   robot would come up looking healthy and be unreachable.
+- **Teardown sends SIGINT first and waits, *then* kills the window** (`interrupt_win` + `wait_idle`, used by
+  `down`, `down <win>` and `restart`; added 2026-08-15). Do not "simplify" this back to a bare
+  `tmux kill-session`/`kill-window`/`respawn -k`: `sllidar_node` registers a handler for **SIGINT only**
+  (`signal(SIGINT, ExitHandler)`), and its `setMotorSpeed(0)` + `stop()` run *after* `work_loop()` returns —
+  so SIGHUP (what `tmux kill-*` sends), SIGTERM (bare `pkill`) and SIGKILL (`respawn -k`) all kill it before
+  it can stop the motor. Symptom that led here: after `./gcs.sh --down` the **lidar keeps spinning forever**
+  while `ps` shows no nodes and `ros2 topic list` shows nothing — which reads as "the shutdown didn't work"
+  but is really "the shutdown worked and the motor was never told". Verified on hardware both ways: SIGHUP
+  gives `[ros2run]: Hangup` with no `Stop motor`; the current path logs `Stop motor` and a full `down`
+  takes ~1.1 s. The `pkill` backstop after `kill-session` is likewise `-INT`, sleep, then default TERM, since
+  it exists to catch orphans that are outside tmux and TERM would leave *their* motor spinning too.
+  (Manual recovery if a lidar is ever left spinning: `ros2 run sllidar_ros2 sllidar_node --ros-args -p
+  serial_port:=/dev/rplidar -p serial_baudrate:=460800` then Ctrl-C. The **baud matters** — the node's own
+  default is 115200 and the C1 needs 460800, which the launch file passes but a bare `ros2 run` does not;
+  at the wrong baud it just prints `Error, operation time out` and exits 255.)
 - Bringup args live in `~/.tirt_robot_args` on the Pi (`./robotctl args "..."`), so they survive restarts and
   don't require editing anything.
 
