@@ -131,6 +131,40 @@ win_busy() {
     pgrep -P "$pid" >/dev/null 2>&1
 }
 
+# 送 Ctrl-C(SIGINT)給視窗裡正在跑的程式,讓它自己收尾。
+#
+# 為什麼一定要 SIGINT,不能直接 kill-window / kill-session / respawn -k:
+# sllidar_node 只註冊了 SIGINT(sllidar_ros2/src/sllidar_node.cpp 的
+# `signal(SIGINT, ExitHandler)`),而關馬達的
+#     drv->setMotorSpeed(0); drv->stop();
+# 是寫在 work_loop() **正常返回之後**才執行的。tmux kill-* 送的是 SIGHUP、
+# pkill 預設送 SIGTERM、respawn -k 送 SIGKILL —— 三種 rclcpp 都不會走到那段,
+# 行程當場消失,馬達沒人關。
+#
+# 2026-08-15 實測的症狀:`./gcs.sh --down` 之後 ps 裡一個節點都不剩、
+# `ros2 topic list` 也看不到 /scan,雷達卻還在轉(它的電從 USB 來,沒收到停止
+# 指令就會一直轉到拔線為止)。底盤沒有這個問題只是因為 driver 的 watchdog
+# 逾時會自己歸零,不是因為它有被好好關掉。
+interrupt_win() {
+    local w="$1"
+    win_exists "$w" || return 0
+    win_busy "$w" || return 0
+    tmux send-keys -t "$S:$w" C-c
+}
+
+# 等這些視窗裡的程式收完尾,最多 $1 秒;逾時回傳 1 讓呼叫端改用強制手段。
+wait_idle() {
+    local timeout="$1"; shift
+    local i w busy
+    for i in $(seq 1 $((timeout * 4))); do
+        busy=0
+        for w in "$@"; do win_busy "$w" && busy=1; done
+        [ "$busy" = 0 ] && return 0
+        sleep 0.25
+    done
+    return 1
+}
+
 # pane 死掉後 send-keys 沒有用(沒有 shell 在收),必須先 respawn。
 win_dead() {
     [ "$(tmux list-panes -t "$S:$1" -F '#{pane_dead}' 2>/dev/null | head -1)" = "1" ]
@@ -179,6 +213,11 @@ start_win() {
 stop_win() {
     local w="$1"
     win_exists "$w" || { echo "robot_tmux: [$w] 不存在"; return 0; }
+    # 先 Ctrl-C 讓程式自己收尾(理由見 interrupt_win),收完了再關視窗。
+    if win_busy "$w"; then
+        interrupt_win "$w"
+        wait_idle 5 "$w" || echo "robot_tmux: [$w] 5 秒內沒結束,直接強制關閉"
+    fi
     tmux kill-window -t "$S:$w"
     echo "robot_tmux: [$w] 已關閉"
 }
@@ -207,13 +246,24 @@ cmd_up() {
 cmd_down() {
     tmux has-session -t "$S" 2>/dev/null || { echo "robot_tmux: session '$S' 沒在跑"; return 0; }
     if [ $# -eq 0 ]; then
+        # 順序是重點:一定要先 Ctrl-C 等各段自己收尾,才能 kill-session。
+        # 反過來寫(舊版就是)等於永遠來不及 —— kill-session 的 SIGHUP 先到,
+        # 雷達馬達關不掉,後面那行 pkill 只是對著一堆已經死掉的 pid 空砍。
+        local w
+        for w in "${WINDOWS[@]}"; do interrupt_win "$w"; done
+        wait_idle 5 "${WINDOWS[@]}" || echo "robot_tmux: 有程式 5 秒內沒收完尾,改用強制關閉"
+
         tmux kill-session -t "$S"
         echo "robot_tmux: 已關閉整個 session '$S'"
         # tmux kill 不保證子孫行程都收掉;底盤的 UART 被卡住會讓下次啟動讀到亂碼。
         # pattern 帶前綴對可執行檔路徑,不用裸節點名 —— 裸名字會連「只是提到它」的
         # 行程一起殺(grep / tail / 編輯器都算),見 run_robot.sh 同處的註解。
         # teleop 要兩種寫法:它同時有 `ros2 run ...` 包裝行程和真正的執行檔。
-        pkill -f "robot_bringup\.launch\.py|/ominibot_driver_node|/sllidar_node|/mecanum_teleop|ros2 run ominibot_driver mecanum_teleop" 2>/dev/null
+        # 這裡也是先 -INT 再預設(TERM):能撿到的是「不在 tmux 裡的孤兒」,例如上一輪
+        # 殘留的 sllidar_node —— 對它送 TERM 一樣關不掉馬達,所以同樣要給收尾機會。
+        local nodes="robot_bringup\.launch\.py|/ominibot_driver_node|/sllidar_node|/mecanum_teleop|ros2 run ominibot_driver mecanum_teleop"
+        if pkill -INT -f "$nodes" 2>/dev/null; then sleep 2; fi
+        pkill -f "$nodes" 2>/dev/null
         pkill -f "fastdds discovery|fast-discovery-server" 2>/dev/null
         fuser -k /dev/ttyAMA0 2>/dev/null
         return 0
@@ -231,7 +281,12 @@ cmd_restart() {
     for w in "$@"; do
         win_cmd "$w" >/dev/null || die "未知的視窗名:$w"
         if win_exists "$w"; then
-            # respawn -k 砍掉舊行程並在同一個視窗開一個乾淨的 shell
+            # respawn -k 是 SIGKILL,舊行程來不及收尾(雷達馬達就是這樣關不掉,
+            # 見 interrupt_win)。所以先 Ctrl-C、等它自己停,respawn 只當保險。
+            if win_busy "$w"; then
+                interrupt_win "$w"
+                wait_idle 5 "$w" || echo "robot_tmux: [$w] 5 秒內沒結束,直接強制重生"
+            fi
             write_rc
             tmux respawn-window -k -t "$S:$w" -c "$REPO" "bash --rcfile '$RC' -i"
             sleep 0.3
