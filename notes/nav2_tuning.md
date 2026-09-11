@@ -289,3 +289,64 @@ RViz 裡最有用的三個 display（`rviz/view_nav2.rviz` 都已經開好）：
 | 「no valid trajectories」 | §2a 的 `min_speed_*` 太高，或 §3 的膨脹把走道封死了 |
 | 定位莫名其妙地爛，但完全沒有錯誤訊息 | **另一台機器上還開著 `run_slam.sh`。** DDS 是跨機的：它的即時 `/map` 會和 `map_server` 的存檔地圖同時餵給 AMCL，兩邊還都在發 `map->odom`。`run_nav2.sh` 現在會在啟動前檢查並警告 |
 | 啟動後很久都沒有任何 log | 有殘留的 `nav2_container` 孤兒在吃 CPU。它**不理 SIGTERM**，要 `pkill -9 -f "component_container_isolated.*nav2_container"` |
+
+---
+
+## §9 變更紀錄
+
+改參數時請在這裡補一筆:哪天、改了什麼、為什麼、有沒有在硬體上驗證過。
+「為什麼」比「改成多少」重要 —— 數字在 YAML 裡看得到,理由只有這裡有。
+
+### 2026-08-15 — 針對三個回報症狀的第一批修正(**尚未在硬體上驗證**)
+
+使用者回報:**(1) 整體速度太慢、(2) 轉彎和接近終點卡頓、(3) 路徑很奇怪不像最短的**。
+定位是「自主導航到指定點」,風險取向是「先能穩定完跑再往上推速度」。
+
+改了 `config/nav2_params.yaml` 七個值,全部只動參數,沒動程式:
+
+| 參數 | 原值 | 新值 | 針對 |
+| --- | --- | --- | --- |
+| `critics`(移除 `RotateToGoal`) | 含 RotateToGoal | 不含 | 終點卡頓 |
+| `general_goal_checker.yaw_goal_tolerance` | 0.20 | **3.15** | 終點卡頓 |
+| `FollowPath.PathAlign.scale` | 12.0 | **6.0** | 轉彎卡頓 |
+| `FollowPath.GoalAlign.scale` | 8.0 | **4.0** | 轉彎卡頓 |
+| `GridBased.use_astar` | true | **false** | 路徑品質 |
+| `FollowPath.BaseObstacle.scale` | 0.02 | **0.5** | 擦牆風險 |
+| `planner_server.expected_planner_frequency` | 20.0 | **1.0** | 假警報 |
+
+三件當時查出來、值得記住的事:
+
+1. **`RotateToGoal` 不是評分項,是一道閘門。** 車心一進 `xy_goal_tolerance`,它的
+   `prepare()` 就把所有還在平移的軌跡判為 illegal,強迫先完全停下、再原地轉到
+   `yaw_goal_tolerance` 之內。配上被衰減約 8 倍的角速度指令,那段幾乎轉不完 ——
+   這就是「快到終點在磨」的完整解釋。**注意 `PathAlign`/`GoalAlign` 必須留著**:
+   三個轉向評分項如果一起拿掉,DWB 就沒有任何一項懲罰旋轉,轉與不轉分數相同,
+   結果是隨機亂轉,比原本更糟。
+
+2. **`expected_planner_frequency` 不是重規劃頻率。** 在 Humble 的 `planner_server` 裡它
+   只是 `max_planner_duration_`,也就是印
+   `Planner loop missed its desired rate` 的門檻。真正的重規劃節奏由行為樹決定:
+   `navigate_to_pose_w_replanning_and_recovery.xml:11` 的 `<RateController hz="1.0">`。
+   所以 20 → 1 **不會變快**,是讓真正的超時不被 19 次/秒的假警報淹掉。
+
+3. **矩形 `footprint` 不要換 —— YAML 第 119-126 行那段建議的安全方向是反的。**
+   `nav2_costmap_2d` 取短邊當 inscribed 半徑(0.072),比現在的圓形 0.09 **更小**,
+   等於讓 2D planner **更敢**規劃過窄縫;而 NavFn/SmacPlanner2D 都不考慮車體朝向。
+   同時 DWB 的 `BaseObstacleCritic` 只取軌跡中心格的代價,**完全不看 footprint** ——
+   要看得換成貴很多的 `ObstacleFootprintCritic`。角落外伸 1.8cm 是**轉彎時**才發生的
+   (對角 0.216m),所以「少轉彎」本身就是那個問題的解,不是換 footprint。
+
+**尚未處理、下次要接的(依重要性):**
+
+- **速度太慢的真正原因沒有修掉。** `cmd_linear_scale`/`cmd_angular_scale` 仍是 1.0,
+  命令路徑被衰減約 8 倍(`driver_node.py:130-142`:命令 0.15 m/s → 實際 0.019)。
+  現在 `max_vel_x: 0.35` 只是名目值,實際約 0.04。要跑 `tools/vel_sweep.py` 量。
+  ⚠️ 校正後車子會比看過的快 8 倍,**要先把 `max_vel_*` 和 `teleop_node.py` 的
+  `linear_speed`(目前 0.6,是當初手工補償這個衰減加上去的)一起壓低**。
+  天花板:板子回授在 raw 2.77 飽和 ≈ **0.42 m/s**,超過 `/odom` 會無聲少報。
+- **`min_speed_xy: 0.06` 的意義會在校正當下改變。** 現在它是「命令空間」的門檻,
+  等於真實 0.0075 m/s;校正後變成真實 0.06 m/s,嚴格 8 倍,在窄走道容易觸發
+  `no valid trajectories`。必須和 `vel_sweep` 量到的死區一起重新推導,不能放著不管。
+- **`robot_radius: 0.09` 是為 201 那間雜亂測試房調的,不是為比賽迷宮。** 比賽走道
+  內徑 44cm,自由帶 = 0.44 − 2R,即使 R=0.12 也還有 20cm。要拿**真正的比賽地圖**
+  重跑 `tools/costmap_check.py` 再決定,不要把測試房的權宜值帶進賽場。

@@ -145,7 +145,7 @@ local_costmap:
       # 整個 nav2_container 載不起來(實機踩過)。所以只能是整數 → 3×3m。
       width: 3
       height: 3
-      resolution: 0.05           # 和地圖同解析度
+      resolution: 0.05           # 地圖(mapper_params)2026-09-12 起改 0.025;static layer 會重採樣,costmap 先留 0.05
       robot_radius: 0.09
       # 原版用 voxel_layer(3D 體素),但我們只有一顆 2D 光達,ObstacleLayer 就夠,
       # 而且便宜很多。
@@ -210,12 +210,25 @@ global_costmap:
 planner_server:
   ros__parameters:
     use_sim_time: false
-    expected_planner_frequency: 20.0
+    # ★ 這個參數**不是**重新規劃的頻率(很容易誤會)。在 Humble 的 planner_server 裡
+    #   它只被拿來當 max_planner_duration_,也就是「算超過這個時間就印一行
+    #   Planner loop missed its desired rate」的門檻。真正的重規劃節奏是由行為樹決定的:
+    #   nav2_bt_navigator 的 navigate_to_pose_w_replanning_and_recovery.xml 第 11 行是
+    #   <RateController hz="1.0">。
+    #   所以把 20.0 改成 1.0 不會變快,而是**讓警告變得有意義**:原本門檻是 50ms,
+    #   規劃只要超過 50ms 就狂噴警告,真正的超時被淹沒在假警報裡。2026-08-15 改。
+    expected_planner_frequency: 1.0
     planner_plugins: ["GridBased"]
     GridBased:
       plugin: "nav2_navfn_planner/NavfnPlanner"
       tolerance: 0.15      # 原版 0.5m 比整台車還大,迷宮裡會規到牆的另一側
-      use_astar: true      # 地圖只有 168×104 格,A* 幾乎瞬間,比 Dijkstra 直觀
+      # 2026-08-15 true → false:回報「路徑很奇怪,不像最短的那條」。NavFn 的 A*
+      # 是近似實作,產生的路徑常比它自己的 Dijkstra 模式更歪(而且它是用梯度下降
+      # 抽路徑,本來就會有鋸齒)。地圖只有 168×104 格,全域 Dijkstra 在 Pi 上也是
+      # 瞬間,沒有省時間的必要。若還是不夠直,下一步換 nav2_smac_planner/SmacPlanner2D
+      # (自帶平滑)—— 不要換 ThetaStar:它的任意角度路徑會貼著牆走對角線,而規則是
+      # 碰牆即失敗。
+      use_astar: false
       allow_unknown: false # 關鍵:不准穿過未知區域。開著的話它會很樂意規劃穿牆
 
 controller_server:
@@ -243,7 +256,12 @@ controller_server:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
       xy_goal_tolerance: 0.10    # 原版 0.25m > 車身尺寸,等於「到附近就算到」
-      yaw_goal_tolerance: 0.20
+      # 2026-08-15 0.20 → 3.15(> pi,等於「朝向檢查永遠通過」)。
+      # 比賽規則沒有規定完賽時車頭要朝哪個方向,而麥克納姆是全向底盤、光達是 360°,
+      # 朝向對後續動作也沒有任何影響 —— 所以在終點前花時間轉正是純粹的浪費。
+      # 這一項要和上面 critics 裡拿掉 RotateToGoal 一起看:兩者是同一個修正的兩半,
+      # 只改其中一個沒有用(留著 RotateToGoal 的話它仍然會擋住平移)。
+      yaw_goal_tolerance: 3.15
 
     # =======================================================================
     # === 局部規劃器 FollowPath:DWB,但打開 y 方向(橫移) ===
@@ -320,22 +338,41 @@ controller_server:
       stateful: True
       # critics = 評分項。沿用原版組合(這組沒有 PreferForward 之類會否決橫移的項),
       # 只把權重照 holonomic 的需求調整。
-      critics: ["RotateToGoal", "Oscillation", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
-      BaseObstacle.scale: 0.02
+      # 2026-08-15 把 RotateToGoal 整個拿掉 —— 這是「快到終點卻卡住」的真正原因。
+      # RotateToGoal 不只是一個評分項,它是一道**閘門**:一旦車心進入 xy_goal_tolerance,
+      # 它的 prepare() 會把所有「還在平移」的軌跡直接判為 illegal,強迫車子先完全停下,
+      # 然後只准原地轉,直到朝向進入 yaw_goal_tolerance 為止。配上目前被衰減約 8 倍的
+      # 角速度指令,那段原地轉幾乎轉不完 —— 看起來就是「到了終點在磨」。
+      # 規則沒有規定完賽時車頭要朝哪(見下面 yaw_goal_tolerance),所以這道閘門是純損失。
+      # 注意:PathAlign / GoalAlign 必須留著。三個轉向評分項如果一起拿掉,DWB 就沒有
+      # 任何一項會懲罰旋轉,轉與不轉的軌跡分數完全相同,結果是隨機亂轉 —— 比現在更糟。
+      critics: ["Oscillation", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
+      # 0.02 是 nav2 原廠預設,對上 PathDist 的 32.0 等於 1600:1 —— controller 幾乎
+      # 完全不看障礙代價。撞牆這件事本身還是有硬約束(DWB 掃到 lethal 格會直接把該條
+      # 軌跡判為 illegal),所以 scale 影響的是「偏好」:走道 44cm、inflation_radius
+      # 0.18 讓整條走道都有代價梯度,提高權重的實際效果是**把車壓在走道中線**。
+      # 比賽規則是碰到牆該次就失敗,所以這個偏好值得買。2026-08-15 0.02 → 0.5。
+      # 先取 0.5 這種保守值,是因為反方向的失效模式更難看也更難診斷:走道只有 44cm、
+      # inflation_radius 0.18 幾乎覆蓋整條走道,權重太高會讓每一條軌跡看起來都很貴,
+      # DWB 可能寧可停下來不動。實跑仍會擦牆再往上推(上限約 2.0);若變得畏縮、
+      # 在走道中間猶豫不前,就往回降到 0.2。
+      BaseObstacle.scale: 0.5
       # PathAlign / GoalAlign 是「把車頭轉去對齊路徑/目標方向」的評分項。對差速輪
       # 這是必要的(不轉頭就走不動),但麥克納姆可以直接橫移過去,權重留太高會逼它
       # 做多餘的轉身。原版 32/24 → 降到 12/8,把主導權交給 PathDist(貼齊路徑位置)。
-      PathAlign.scale: 12.0
+      # 2026-08-15 再降到 6/4:回報「轉彎會卡頓」,而 notes/nav2_tuning.md:174-176
+      # 早就把「還是會先轉再走就把 PathAlign 降到 6」列為下一步,只是一直沒做。
+      PathAlign.scale: 6.0
       PathAlign.forward_point_distance: 0.1
-      GoalAlign.scale: 8.0
+      GoalAlign.scale: 4.0
       GoalAlign.forward_point_distance: 0.1
       PathDist.scale: 32.0       # 位置要貼齊全域路徑,迷宮裡不能自己抄捷徑
       GoalDist.scale: 24.0
-      RotateToGoal.scale: 32.0   # 最後對正目標朝向
-      # 「接近目標時把速度壓下來」的倍率。原版 5.0 會讓最後一段變成長距離爬行 ——
-      # 正是這台在低速走不動的區間,看起來就像快到終點卻卡住。5.0 → 2.0。
-      RotateToGoal.slowing_factor: 2.0
-      RotateToGoal.lookahead_time: -1.0
+      # RotateToGoal.* 的三個參數已隨 critic 一起移除(見上面 critics 的說明)。
+      # 副作用要知道:少了 RotateToGoal 就沒有任何評分項會在接近終點時減速,車子會
+      # 直接開到 goal checker 觸發才停。用現在的數字算:0.25 m/s 配 decel_lim_x -1.5
+      # → 煞停距離約 2cm,遠小於 xy_goal_tolerance 的 10cm,所以不會衝過頭。
+      # 之後若把 max_vel_x 推到 0.35 以上,要重算這個餘裕。
       Oscillation.scale: 1.0
       # 「移動多遠才算脫離振盪」。原版 0.05m 對這台 0.15m 的小車偏大,容易誤判成
       # 卡住而把某些方向鎖起來。
