@@ -140,7 +140,7 @@ local_costmap:
   local_costmap:
     ros__parameters:
       use_sim_time: false
-      update_frequency: 10.0     # controller 跑 20Hz,costmap 至少要一半
+      update_frequency: 5.0      # controller 跑 10Hz,costmap 至少要一半(2026-10-26 全部搬上 Pi 後減半)
       publish_frequency: 5.0
       global_frame: odom
       robot_base_frame: base_link
@@ -239,7 +239,11 @@ planner_server:
 controller_server:
   ros__parameters:
     use_sim_time: false
-    controller_frequency: 20.0
+    # 20 → 10(2026-10-26):單機模式下 nav2 + RViz + 其他全在 Pi 上,20Hz 時 log 一直
+    # 「Control loop missed its desired rate」,實際只有 ~10Hz、負載 9/4 核、81°C,
+    # 接著 progress_checker 判 Failed to make progress。0.35 m/s × 0.1 s = 3.5 cm/cycle,
+    # 迷宮裡夠用。driver 的 cmd_vel_timeout 1.0 s,10Hz 還有 10 倍餘裕。
+    controller_frequency: 10.0
     # 這三個是「odom 回報速度低於此值就當成 0」的門檻。原版 y 是 0.5(給差速輪用,
     # 直接把橫移當雜訊丟掉)—— 對麥克納姆是災難,必須降到跟 x 一樣。
     min_x_velocity_threshold: 0.001
@@ -345,12 +349,12 @@ controller_server:
       decel_lim_x: -2.0
       decel_lim_y: -2.0
       decel_lim_theta: -3.0
-      # 取樣數 = 候選軌跡數,這裡是 12×8×15 = 1440 條/cycle。vy_samples 從原版的
-      # 5 提到 8,因為橫移現在是真的會用到的自由度;vx 從 10 提到 12 是因為速度
-      # 範圍拉寬到 -0.20~0.35 之後,取樣間隔會變粗。再往上加只是白燒 CPU。
-      vx_samples: 12
-      vy_samples: 8
-      vtheta_samples: 15
+      # 取樣數 = 候選軌跡數。原本 12×8×15 = 1440 條/cycle 是在筆電上跑的;2026-10-26 起
+      # nav2 跑在 Pi 上,改成 8×6×10 = 480 條,配合 controller_frequency 減半,總計算量約 1/6。
+      # vy 仍保留 6 個以上取樣,因為橫移是真的會用到的自由度。
+      vx_samples: 8
+      vy_samples: 6
+      vtheta_samples: 10
       # 每條軌跡往前模擬多久。1.5s × 0.35m/s ≈ 前方 0.5m,對迷宮的走道長度剛好。
       # 再加大會開始「看過轉角」而選出撞牆的軌跡。
       sim_time: 1.5
