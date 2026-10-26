@@ -215,6 +215,8 @@ while true; do
     echo "  0) 全部關掉"
     echo "  q) 離開選單            (背景程式繼續跑)"
     read -r -p "選擇: " c || exit 0
+    # 中文輸入法開著時打出來的是全形「９」,會落到「沒有這個選項」;順便去掉空白。
+    c="$(sed 's/[[:space:]]//g; y/０１２３４５６７８９ｑＱ/0123456789qQ/' <<< "$c")"
     echo
     case "$c" in
         1) do_mapping ;;
