@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  單機模式(solo)的 Fast DDS profile —— 所有節點都在 Pi 上,沒有第二台機器。
+
+  由 dds/setup_dds.sh 在 ~/.tirt_solo 存在時選用(./menu.sh 第一次執行會建立它)。
+  和 fastdds_pi.xml / fastdds_pc.xml 的差別:
+    - 沒有 Discovery Server。那是為了「Pi 和筆電跨一顆會擋 multicast 的 WiFi AP」而存在的,
+      單機沒有這個問題。
+    - 只走 127.0.0.1。資料從不離開 Pi,所以 WiFi 斷了、換場地、純電池沒有網路,
+      機器人都照跑 —— 這正是比賽規則(不能用遠端電腦運算)需要的狀態。
+    - 不依賴 10.77.0.2 別名。開機沒連上 WiFi 也能啟動。
+  initialPeersList 指向 127.0.0.1:Linux 的 lo 沒有 MULTICAST 旗標,預設的 multicast
+  探索在 lo 上不可靠,改用 unicast 對本機逐一探索(範圍見 maxInitialPeersRange)。
+-->
+<dds xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+    <profiles>
+        <transport_descriptors>
+            <transport_descriptor>
+                <transport_id>tirt_solo_transport</transport_id>
+                <type>UDPv4</type>
+                <interfaceWhiteList>
+                    <address>127.0.0.1</address>
+                </interfaceWhiteList>
+                <!-- initialPeersList 對每個 peer 位址只探測 participant id 0..N-1 的 port,預設 N=4。
+                     bringup + slam/nav2 + rviz + ros2 CLI 遠超過 4 個,id 都大於 4 的兩個節點
+                     就永遠互相找不到(實測:driver 的 /odom 在 topic list 裡完全不見,slam
+                     因為等不到 odom TF 一直 queue full)。 -->
+                <maxInitialPeersRange>64</maxInitialPeersRange>
+            </transport_descriptor>
+        </transport_descriptors>
+        <participant profile_name="tirt_solo_participant" is_default_profile="true">
+            <rtps>
+                <userTransports>
+                    <transport_id>tirt_solo_transport</transport_id>
+                </userTransports>
+                <useBuiltinTransports>false</useBuiltinTransports>
+                <builtin>
+                    <initialPeersList>
+                        <locator>
+                            <udpv4>
+                                <address>127.0.0.1</address>
+                            </udpv4>
+                        </locator>
+                    </initialPeersList>
+                </builtin>
+            </rtps>
+        </participant>
+    </profiles>
+</dds>

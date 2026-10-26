@@ -27,14 +27,19 @@ source /opt/ros/humble/setup.bash
 
 has_alias() { ip -4 -o addr show scope global 2>/dev/null | grep -q " ${TIRT_PI_IP}/"; }
 
-for _i in $(seq 1 "$ALIAS_WAIT"); do
-    has_alias && break
-    sleep 1
-done
-
-# 有別名才套 DDS profile。setup_dds.sh 在沒有別名時會刻意什麼都不設定,這裡照它的判斷走。
-if has_alias; then
+# 單機模式(~/.tirt_solo,見 ./menu.sh)只走 127.0.0.1,跟 WiFi / 別名無關:不必等,直接套。
+if [ -f "$HOME/.tirt_solo" ]; then
     source "$REPO/dds/setup_dds.sh"
+else
+    for _i in $(seq 1 "$ALIAS_WAIT"); do
+        has_alias && break
+        sleep 1
+    done
+
+    # 有別名才套 DDS profile。setup_dds.sh 在沒有別名時會刻意什麼都不設定,這裡照它的判斷走。
+    if has_alias; then
+        source "$REPO/dds/setup_dds.sh"
+    fi
 fi
 
 if [ -z "${FASTRTPS_DEFAULT_PROFILES_FILE:-}" ]; then

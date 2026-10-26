@@ -2,6 +2,15 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Progress board (do this every session)
+
+The operator tracks the whole semester on one board: https://claude.ai/artifact/WYfVr1FrFEaJS1Zv3dK9Nq
+(artifact database, collections `items` and `log`; this project's item is `items/tirt`). **Before ending a
+conversation, and after every commit of progress**, update it with `ArtifactData`: change the matching
+item's `status` / `progress` / `next` / `updated` (read it first and pin `if_version`), and add one short
+entry to `log` (`{at: "YYYY-MM-DD HH:MM", text: "..."}`). Do the same whenever the operator reports
+progress, finishes something, or a deadline moves. Never create a duplicate item — update the existing one.
+
 ## What this repo is
 
 Hardware design files and robot software for a maze-solving robot built for the 2026 TIRT competition
@@ -630,7 +639,38 @@ Before adding `ros2_control`/Gazebo joint dynamics, the four `continuous` wheel 
 `<limit effort="" velocity=""/>` — this needs to be filled in from the N20 motor's actual effort/velocity
 figures, not left as a placeholder.
 
-## Runtime deployment (two-machine setup)
+## Runtime deployment — single-machine `./menu.sh` (current, 2026-10-26)
+
+**Everything now runs on the Pi; the operator's machine is Windows + MobaXterm (ssh terminal + X server
+for RViz).** The operator has no Ubuntu laptop in the lab, found the two-machine split confusing, and the
+rules forbid remote compute anyway. Entry point: ssh into the Pi, `cd ~/2026_TIRT && ./menu.sh` — a
+numbered Chinese menu: 1 mapping (bringup + slam), 2 keyboard teleop (foreground, Ctrl-C back), 3 save
+map, 4 navigation (pick from `maps/`), 5 RViz on/off (forwarded to MobaXterm's X server via
+`~/.tirt_display`), 6 health (`get_throttled`, battery, `/scan`/`/odom` Hz, temp, load), 7 window log,
+8 tmux attach, 0 all down. Mapping and navigation are switched **in place** (the menu stops the other one
+first), which is safe because it's all one machine. The menu exiting or ssh dropping leaves the stack
+running in the `tirt` tmux session.
+- Mode flag is the file **`~/.tirt_solo`** (created on the menu's first run). `dds/setup_dds.sh` then picks
+  `dds/fastdds_solo.xml` + `ROS_LOCALHOST_ONLY=1` **before** any alias check, so no discovery server, no
+  `10.77.0.2` alias, no WiFi needed — a battery-only boot works. `rm ~/.tirt_solo` restores the two-machine
+  setup below (still intact). `pi/oled_boot.sh` honours the flag too (restart `tirt-oled` after switching).
+- `fastdds_solo.xml` sets **`maxInitialPeersRange` 64**: with unicast initial peers on `127.0.0.1` Fast DDS
+  only probes participant ids 0..3 by default, so two late participants (e.g. `ominibot_driver` and the CLI)
+  never discover each other — `/odom` vanished from `topic list` and slam sat at "queue is full". Lo has no
+  MULTICAST flag, hence unicast peers at all.
+- `pi/robot_tmux.sh` in solo mode: default windows `bringup shell`; `slam`/`nav`/`rviz` are opened by name
+  (`nav` reads the map from `~/.tirt_nav_map`, `rviz` its config from `~/.tirt_rviz_cfg`); no alias wait;
+  new `busy <win>` subcommand for the menu. Stopping `nav` **SIGKILLs the nav2 container** afterwards — on the
+  Pi it doesn't finish SIGINT teardown in 5 s and was left orphaned at load 5.5 publishing `map->odom` next to
+  the new slam. That pkill pattern is anchored `^/opt/ros/[^ ]*/component_container_isolated` because the
+  unanchored one matched (and killed) a shell whose command line merely contained it.
+- Slam is started ~5 s **after** bringup, because `run_robot.sh` pkills any `async_slam_toolbox_node` on start.
+- Verified on hardware 2026-10-26: `/scan` 10 Hz, `/odom` 20 Hz, map published at 0.025 m, no queue-full;
+  Nav2 all lifecycle nodes active on the Pi; nav→mapping switch leaves no orphans; lidar logs `Stop motor` on
+  every down; `get_throttled` 0x0 throughout (self-soldered USB-C supply). RViz-over-X from the menu not yet
+  exercised. CPU budget for slam+nav2+RViz together on the Pi is the open question — keep RViz closed in runs.
+
+## Runtime deployment (two-machine setup — superseded by `menu.sh`, still works with `rm ~/.tirt_solo`)
 
 The live robot runs **split across two machines** talking over ROS 2 DDS. As of **2026-07-27 the operator
 workflow is one command on the laptop and zero commands on the Pi**; `notes/雙機RViz連線.md` is the full

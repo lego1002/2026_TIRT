@@ -23,8 +23,13 @@ fi
 
 _dds_has_ip() { ip -4 -o addr show scope global 2>/dev/null | grep -q " $1/"; }
 
+# 單機模式(solo):所有節點都在 Pi 上,Windows/MobaXterm 只當終端機和 RViz 的螢幕。
+# 由 ~/.tirt_solo 這個檔案決定(./menu.sh 第一次執行時建立;rm 掉就回到雙機模式)。
+# 放在別名判斷之前:單機模式根本不需要別名,沒連 WiFi 的純電池開機也要能跑。
 if [ -n "${TIRT_ROLE:-}" ]; then
     _dds_role="$TIRT_ROLE"
+elif [ -f "$HOME/.tirt_solo" ]; then
+    _dds_role=solo
 elif _dds_has_ip "$TIRT_PI_IP"; then
     _dds_role=pi
 elif _dds_has_ip "$TIRT_PC_IP"; then
@@ -56,8 +61,13 @@ else
     else
         export FASTRTPS_DEFAULT_PROFILES_FILE="$_dds_profile"
         export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-        export ROS_LOCALHOST_ONLY=0
-        echo "setup_dds: role=$_dds_role  server=${TIRT_PI_IP}:${TIRT_DDS_PORT:-11811}  profile=$_dds_profile"
+        if [ "$_dds_role" = solo ]; then
+            export ROS_LOCALHOST_ONLY=1
+            echo "setup_dds: role=solo(單機,只走 127.0.0.1)  profile=$_dds_profile"
+        else
+            export ROS_LOCALHOST_ONLY=0
+            echo "setup_dds: role=$_dds_role  server=${TIRT_PI_IP}:${TIRT_DDS_PORT:-11811}  profile=$_dds_profile"
+        fi
 
         # ros2 CLI 的 daemon 會沿用「它第一次啟動時」的 discovery 設定,所以在這個
         # profile 生效前就跑起來的 daemon 會完全忽略它(症狀:topic list 空空如也 /

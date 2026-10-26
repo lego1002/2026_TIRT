@@ -27,15 +27,31 @@ S="${TIRT_PI_SESSION:-tirt}"
 RC="${XDG_RUNTIME_DIR:-/tmp}/tirt_window_rc.sh"
 ARGS_FILE="$HOME/.tirt_robot_args"
 
-WINDOWS=(dds bringup teleop shell)
+# 單機模式(~/.tirt_solo 存在,由 ./menu.sh 建立):全部節點跑在 Pi 上,沒有 PC。
+# 這時不需要 discovery server 也不需要 10.77.0.2 別名;teleop 改由 menu.sh 在前景跑
+# (ssh 斷了 teleop 就跟著停,driver watchdog 會讓車停下 —— 這是想要的行為)。
+SOLO=0; [ -f "$HOME/.tirt_solo" ] && SOLO=1
+if [ "$SOLO" = 1 ]; then
+    WINDOWS=(bringup shell)
+else
+    WINDOWS=(dds bringup teleop shell)
+fi
+# up 不帶參數時只開 WINDOWS;下面這些是要明講才開的(單機模式由 menu.sh 開)。
+ALL_WINDOWS=(dds bringup teleop shell slam nav rviz)
 
 # 各視窗要跑的指令(shell 視窗留空,只給你一個 source 好環境的 prompt)。
+# nav / rviz 的參數放在檔案裡(menu.sh 寫入),理由和 $ARGS_FILE 一樣:restart 時沿用。
 win_cmd() {
     case "$1" in
         dds)     echo "$REPO/dds/run_discovery_server.sh" ;;
         bringup) echo "$REPO/run_robot.sh $(cat "$ARGS_FILE" 2>/dev/null)" ;;
         teleop)  echo "ros2 run ominibot_driver mecanum_teleop" ;;
         shell)   echo "" ;;
+        slam)    echo "$REPO/run_slam.sh use_rviz:=false" ;;
+        nav)     echo "$REPO/run_nav2.sh $(cat "$HOME/.tirt_nav_map" 2>/dev/null) use_rviz:=false" ;;
+        # tmux 視窗裡沒有 ssh 的 DISPLAY,所以由 menu.sh 把當下那條 MobaXterm 連線的
+        # DISPLAY 存進檔案再帶進來。ssh 斷了這個 DISPLAY 就失效,RViz 會跟著關掉。
+        rviz)    echo "DISPLAY=$(cat "$HOME/.tirt_display" 2>/dev/null) rviz2 -d $(cat "$HOME/.tirt_rviz_cfg" 2>/dev/null || echo "$REPO/car_assemble_description/rviz/view_robot.rviz")" ;;
         *)       return 1 ;;
     esac
 }
@@ -219,12 +235,18 @@ stop_win() {
         wait_idle 5 "$w" || echo "robot_tmux: [$w] 5 秒內沒結束,直接強制關閉"
     fi
     tmux kill-window -t "$S:$w"
+    # nav2 的 component_container 在 Pi 上 5 秒內收不完 SIGINT,視窗一關它就變成孤兒繼續跑
+    # (2026-10-26 實測:選單從導航切回建圖後它還活著,CPU 負載停在 5.5,而且和新開的
+    # slam_toolbox 同時發 map->odom)。它又不理 SIGTERM(見 run_nav2.sh),所以直接 -9。
+    if [ "$w" = nav ] && pkill -9 -f "^/opt/ros/[^ ]*/component_container_isolated .*nav2_container" 2>/dev/null; then
+        sleep 1
+    fi
     echo "robot_tmux: [$w] 已關閉"
 }
 
 cmd_up() {
     validate_args_file || exit 1
-    wait_for_alias || exit 1
+    if [ "$SOLO" = 0 ]; then wait_for_alias || exit 1; fi
     ensure_session
     local list=("$@")
     [ ${#list[@]} -eq 0 ] && list=("${WINDOWS[@]}")
@@ -250,8 +272,8 @@ cmd_down() {
         # 反過來寫(舊版就是)等於永遠來不及 —— kill-session 的 SIGHUP 先到,
         # 雷達馬達關不掉,後面那行 pkill 只是對著一堆已經死掉的 pid 空砍。
         local w
-        for w in "${WINDOWS[@]}"; do interrupt_win "$w"; done
-        wait_idle 5 "${WINDOWS[@]}" || echo "robot_tmux: 有程式 5 秒內沒收完尾,改用強制關閉"
+        for w in "${ALL_WINDOWS[@]}"; do interrupt_win "$w"; done
+        wait_idle 8 "${ALL_WINDOWS[@]}" || echo "robot_tmux: 有程式 8 秒內沒收完尾,改用強制關閉"
 
         tmux kill-session -t "$S"
         echo "robot_tmux: 已關閉整個 session '$S'"
@@ -265,6 +287,10 @@ cmd_down() {
         if pkill -INT -f "$nodes" 2>/dev/null; then sleep 2; fi
         pkill -f "$nodes" 2>/dev/null
         pkill -f "fastdds discovery|fast-discovery-server" 2>/dev/null
+        # 單機模式的 slam / nav2 / rviz 也在這台。nav2 container 不理 SIGTERM(見 run_nav2.sh),
+        # 所以它直接 -9。
+        pkill -INT -f "/async_slam_toolbox_node|/rviz2 " 2>/dev/null
+        pkill -9 -f "^/opt/ros/[^ ]*/component_container_isolated .*nav2_container" 2>/dev/null
         fuser -k /dev/ttyAMA0 2>/dev/null
         return 0
     fi
@@ -307,7 +333,9 @@ cmd_status() {
     fi
     printf '%-10s %-10s %s\n' 視窗 狀態 目前行程
     local w c
-    for w in "${WINDOWS[@]}"; do
+    for w in "${ALL_WINDOWS[@]}"; do
+        # 單機模式下沒開過的選用視窗就不列,免得一排「無」
+        win_exists "$w" || [[ " ${WINDOWS[*]} " == *" $w "* ]] || continue
         if win_exists "$w"; then
             c="$(tmux list-panes -t "$S:$w" -F '#{pane_current_command}' 2>/dev/null | head -1)"
             if win_busy "$w"; then
@@ -320,6 +348,7 @@ cmd_status() {
         fi
     done
     echo
+    [ "$SOLO" = 1 ] && echo "模式: 單機(全部在 Pi;~/.tirt_solo)"
     echo "固定別名 ${TIRT_PI_IP}: $(ip -4 -o addr show scope global | grep -q " ${TIRT_PI_IP}/" && echo 有 || echo '沒有 (!)')"
     echo "啟動參數 ($ARGS_FILE): $(cat "$ARGS_FILE" 2>/dev/null || echo '(空,用 launch 預設)')"
 }
@@ -338,11 +367,13 @@ case "${1:-}" in
     status)  shift; cmd_status "$@" ;;
     log)     shift; cmd_log "$@" ;;
     attach)  exec tmux attach -t "$S" ;;
+    # 給 menu.sh 用:某視窗「真的有程式在跑」就回傳 0,不印任何東西。
+    busy)    tmux has-session -t "$S" 2>/dev/null && win_busy "${2:?busy 要指定視窗}" ;;
     *)
         cat <<EOF
 用法: $(basename "$0") <指令> [視窗...]
 
-  up [視窗...]       啟動(預設全部:${WINDOWS[*]});已在跑的不動
+  up [視窗...]       啟動(預設:${WINDOWS[*]};另有 slam nav rviz 要明講);已在跑的不動
   restart <視窗...>  只重跑指定的那幾段
   down [視窗...]     關閉;不給視窗名就關掉整個 session 並清乾淨殘留行程
   status             各視窗死活 + 別名 IP + 啟動參數
