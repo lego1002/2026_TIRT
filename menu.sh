@@ -82,9 +82,12 @@ do_mapping() {
 }
 
 do_teleop() {
+    # 導航模式也准遙控:nav2 沒有目標時完全不發 /cmd_vel(2026-10-26 實測 6 秒 0 則),
+    # 不會打架;而且推車走一段正是讓 AMCL 收斂的方法。只有「遙控開著又按 Nav2 Goal」
+    # 會打架 —— teleop 閒著也以 20Hz 發零速度,會和 nav2 的指令交錯。
     if busy nav; then
-        echo "導航正在跑,遙控會和導航搶速度指令(車子會抽動)。要手動開請先選 1 切回建圖。"
-        return
+        echo "※ 導航模式:遙控開著的時候不要按 Nav2 Goal(兩邊會搶指令,車子會抽動)。"
+        echo "   要讓車子自己走,先 Ctrl-C 結束遙控,再去 RViz 點目標。"
     fi
     need_bringup || return
     cat <<'EOF'
