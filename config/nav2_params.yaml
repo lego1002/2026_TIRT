@@ -302,8 +302,8 @@ controller_server:
       #        smoother 留 0.20,實際跑出來就是 0.20,而且完全不會有任何警告。
       #     3. behavior_server 的 max_rotational_vel(recovery 自轉時才用到)
       #   詳細的調參順序寫在 notes/nav2_tuning.md。
-      min_vel_x: -0.20      # 允許倒車(進了死路要退出來)
-      max_vel_x: 0.20
+      min_vel_x: -0.35      # 允許倒車(進了死路要退出來)
+      max_vel_x: 0.35
       min_vel_y: -0.14      # <<< 麥克納姆的關鍵:原版是 0.0
       max_vel_y: 0.14       # <<< 同上
       max_vel_theta: 0.80
@@ -338,7 +338,10 @@ controller_server:
       #   DWB 會回報找不到可行軌跡 → controller 失敗 → 觸發 recovery。
       min_speed_xy: -1.00    # 負值 = 關閉(見上面的說明)
       min_speed_theta: 0.00    # 0.0 = 關閉(見上面的說明)
-      max_speed_xy: 0.29    # x、y 合成速度上限(斜走時會同時用到兩軸)
+      # x、y 合成速度上限。不能讓 x、y 各自開滿:麥克納姆每顆輪的速度約 |vx|+|vy|+k|wz|,
+      # 輪速天花板實測 0.44 m/s(2026-10-27,PWM 98%),0.35+0.14 斜走就會頂到 → 實際比
+      # 命令慢、DWB 預測失準(2026-10-10 Run1/Run2 甩尾就是這樣)。
+      max_speed_xy: 0.35
       # 加減速限制。★ 這是「開快」和「打滑」之間真正的取捨點,不是最高速。
       # 麥克納姆的滾子一打滑,里程計就毀了(這台的航向已經因此改用 gyro 積分,
       # 見 notes/SLAM_learning_note.md),所以最高速可以往上加,加速度要慢慢加。
@@ -549,8 +552,8 @@ velocity_smoother:
     #   四行必須和 FollowPath 的 max_vel_x / max_vel_y / max_vel_theta 與
     #   acc_lim_* / decel_lim_* 保持一致 —— 只改 FollowPath 的話,車速完全不會變,
     #   而你會以為參數沒生效而去亂調別的東西。
-    max_velocity: [0.20, 0.14, 0.80]
-    min_velocity: [-0.20, -0.14, -0.80]
+    max_velocity: [0.35, 0.14, 0.80]
+    min_velocity: [-0.35, -0.14, -0.80]
     max_accel: [1.5, 1.5, 3.0]
     max_decel: [-2.0, -2.0, -3.0]
     odom_topic: "odom"

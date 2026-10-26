@@ -140,10 +140,11 @@ def generate_launch_description():
         # 這台用的是 12V 200rpm N20,所以 3600 = 50% duty = 6V,馬達只吃到額定的一半,
         # 扭矩餘裕直接砍半。空中無負載永遠碰不到上限(所以怎麼測都正常),放到地板上
         # 某顆輪子需要的扭矩超過 6V 能給的,PID 就飽和、掉隊 → 四輪不同步。
-        # 往 6800(94%)調在馬達額定內,但**先確認供電真的是 12V**,並且逐步往上加。
-        # ※ 不是這次「一頓一頓」的元凶:上禮拜好好的時候這兩個值一樣。這是餘裕問題。
-        DeclareLaunchArgument('motor_pwm_max', default_value='3600',
-                              description='PWM duty 上限(1~7199)。原廠 3600=50% duty,12V 供電下馬達只吃到 6V;12V 馬達可試 6800。'),
+        # 2026-10-27 改成 7056(98%,廠商文件 KUBOT 範例值),3S 電池 ~11.7V 下仍在 12V 額定內。
+        # 實測最高速 0.232 → 0.44 m/s(地上與懸空都一樣),0.4 以下完全照命令走。
+        # 舊的 3600 不只是扭矩餘裕問題:它就是車速被鎖在 0.23 m/s 的原因。
+        DeclareLaunchArgument('motor_pwm_max', default_value='7056',
+                              description='PWM duty 上限(1~7199)。7056=98%;原廠 3600=50% 會把 12V 200rpm N20 鎖在 0.23 m/s。'),
         DeclareLaunchArgument('motor_pwm_min', default_value='2100',
                               description='PWM duty 下限(1~7199)。原廠 2100=29% duty,低於此輪子不動(靜摩擦死區)。'),
         # 閉環 PID 增益:原廠為 1:55 重底盤調的,馬達不匹配可能過衝震盪。

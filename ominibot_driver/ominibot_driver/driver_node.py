@@ -122,11 +122,11 @@ class OminiBotDriver(Node):
         # (wheels in the air) the loop never reaches the ceiling and everything
         # looks perfect; on the floor a wheel that needs more than 6V worth of
         # torque saturates, falls behind its setpoint, and the four wheels desync.
-        # Raising this toward ~6800 (94%) is within the motors' rating -- but
-        # verify the supply really is 12V first, and raise it gradually.
-        # Not a regression suspect: these values were the same last week when the
-        # chassis drove fine. This is a torque-headroom fix, not the stutter fix.
-        self.declare_parameter('motor_pwm_max', 3600)
+        # 2026-10-27: raised to 7056 (98%, the vendor's KUBOT example). 3600 was
+        # also a hard speed cap: measured top speed went 0.232 -> 0.44 m/s, the
+        # same on the floor and in the air. A 3S pack (~11.7 V) keeps this within
+        # the motors' 12 V rating.
+        self.declare_parameter('motor_pwm_max', 7056)
         self.declare_parameter('motor_pwm_min', 2100)
         # Closed-loop PID gains written to the board. Factory-tuned for the
         # CircusPi 1:55 chassis; on a mismatched (lighter) motor these can

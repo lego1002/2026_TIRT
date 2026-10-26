@@ -681,6 +681,13 @@ running in the `tirt` tmux session.
   behavior`), which fires after the planner fails (`failed to generate a valid path`). Read the planner line
   first; on the 75 cm test box `rmml_table_1026`, `costmap_check.py` shows only **0.09 m²** reachable from
   the robot, so most goals are unplannable by geometry, not by parameters.
+- **Top speed was capped by `motor_pwm_max`, not the motors** (2026-10-27). The motors are 12V 200 rpm
+  N20 (≈0.50 m/s theoretical on 48 mm wheels), but the factory `motor_pwm_max` 3600 is 50 % duty: `vel_sweep`
+  showed a flat 0.232 m/s for every command ≥0.3, identical on the floor and in the air (so not load).
+  Default is now **7056** (98 %, the vendor PDF's example) in both `driver_node.py` and the launch file:
+  linear to 0.40, ceiling ~0.44 m/s on the floor. Nav2 raised to `max_vel_x` 0.35 / `max_speed_xy` 0.35
+  (kept below the ceiling because a mecanum wheel's speed is ≈|vx|+|vy|+k|wz| — combined motion saturates
+  first, which is what broke the 2026-10-10 runs). Not yet driven under Nav2 at these speeds.
 - Verified on hardware 2026-10-26: `/scan` 10 Hz, `/odom` 20 Hz, map published at 0.025 m, no queue-full;
   Nav2 all lifecycle nodes active on the Pi; nav→mapping switch leaves no orphans; lidar logs `Stop motor` on
   every down; `get_throttled` 0x0 throughout (self-soldered USB-C supply). RViz via MobaXterm X works
