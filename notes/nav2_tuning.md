@@ -350,3 +350,121 @@ RViz 裡最有用的三個 display（`rviz/view_nav2.rviz` 都已經開好）：
 - **`robot_radius: 0.09` 是為 201 那間雜亂測試房調的,不是為比賽迷宮。** 比賽走道
   內徑 44cm,自由帶 = 0.44 − 2R,即使 R=0.12 也還有 20cm。要拿**真正的比賽地圖**
   重跑 `tools/costmap_check.py` 再決定,不要把測試房的權宜值帶進賽場。
+
+### 2026-10-09 — 「到定點一直抖動」查到根因;把標定做成一次性可套用的工具
+
+使用者回報:用 `./gcs.sh --nav` 跑,**走起來很卡,到定點會一直抖動,不實用**。
+因為是 `gcs.sh --nav`(`gcs.sh:156` 會自動 `robotctl down teleop`),所以
+「teleop 閒著發零速度搶 `/cmd_vel`」這條已排除 —— `/cmd_vel` 只有 nav2 一個發布者。
+
+**抖動的根因:DWB 沒有「停住」這個選項。** nav2 humble
+`dwb_plugins/src/kinematic_parameters.cpp`:
+
+```cpp
+if (min_speed_xy_ >= 0.0 && vmag_sq + EPSILON < min_speed_xy_sq_ &&
+    min_speed_theta_ >= 0.0 && fabs(theta) + EPSILON < min_speed_theta_) {return false;}
+```
+
+兩個條件是 **AND**。配上當時的 `min_speed_xy: 0.06` + `min_speed_theta: 0.15`,
+速度 `(0,0,0)` 同時低於兩個門檻 → 被判 illegal → **「停住」這條軌跡根本不在候選
+名單裡**。只要 goal checker 還沒 latch,DWB 每個 cycle 都被迫挑一條非零軌跡。
+終點附近全域路徑只剩幾公分,`PathDist` / `PathAlign` 幾乎分不出高下,就變成在一堆
+同分的非零軌跡之間亂挑 —— 看起來就是原地抖。
+
+這和 2026-08-15 拿掉 `RotateToGoal` 是**同一類**問題的兩個實例:終點附近的評分
+已經退化,任何「強迫它動」的約束都會變成抖動產生器。
+
+**「卡」是另一回事,不是參數能解的。** `max_vel_x: 0.35` 的真實值約 0.04 m/s
+(cmd 路徑 8× 衰減,2026-08-15 就列為待辦第一項、一直沒做)。在那個速度帶靜摩擦
+大於驅動力的時間佔比很高,就是黏滑(stick-slip)。任何 critic 權重都改不動它。
+
+**兩件事必須同一次做完**,沒有「先做哪個比較安全」的選項:
+
+| 只做一半 | 後果 |
+| --- | --- |
+| 只校正、不關下限 | `min_speed_xy` 語意從命令空間 0.0075 m/s 一夕變成真實 0.06 m/s(嚴格 8 倍),44cm 走道會開始噴 `no valid trajectories` |
+| 只關下限、不校正 | 退回 2026-07-28 的原始症狀:DWB 挑 0.02-0.03 m/s 軌跡,輪子打滑車不動,`progress_checker` 判定卡住 |
+
+所以 `min_speed_xy: 0.06` 從來就不是解法,它是 8× 衰減的 OK 繃,而這塊 OK 繃自己
+會製造抖動。
+
+**這次交付的是骨架,不是數字** —— 真實倍率只能在硬體上量:
+
+- `tools/vel_sweep.py` 加了 **`--axis y`**。x / yaw 是校正(各自對應一個參數),
+  y 是量測:`ly` 和 `lx` 乘的是**同一個** `cmd_linear_scale`
+  (`driver_node.py:383-384`),y 軸沒有自己的參數可調,它要回答的是「橫移的真實
+  上限在哪、有沒有自己的死區」。兩軸斜率差 >15% 就不能共用一個 scale,要改成壓
+  `max_vel_y`。鎖頭橫移的跑法會讓一半路程走 y 軸,所以這個數字和 x 一樣重要。
+  ⚠ `--axis y` 要留的是**左右**淨空,不是前後。
+- `tools/apply_calibration.py`(新增)把所有互相牽連的地方一次改完:FollowPath、
+  `velocity_smoother`、`behavior_server`、以及那道速度下限。預設 dry-run 只印 diff,
+  `--apply` 才寫檔。改完會重驗三件事:煞停距離 `v²/2|decel|` < `xy_goal_tolerance`、
+  `max_vx` 沒超過 `/odom` 飽和天花板(raw 2.77 × `odom_linear_scale` ≈ 0.42 m/s,
+  超過之後里程計會無聲少報)、`max_speed_xy` ≥ 兩軸合成。驗算沒過就不寫檔、exit 1。
+  冪等,可以重複跑。
+- `config/nav2_params.yaml` 的速度區塊和下限區塊註解重寫過,把上面的耦合關係寫進去,
+  並標明**不要手動改那兩區**。
+
+踩到的一個坑記在這裡:這些速度參數 nav2 都是以 **double** 宣告的,YAML 裡寫成
+`-1` 而不是 `-1.0`,rclcpp 會當成 integer 型別的 parameter override,
+`declare_parameter` 當場拋 `InvalidParameterTypeException`,整個 `nav2_container`
+起不來 —— 而錯誤訊息只會說某個參數型別不對,不會告訴你是少了 `.0`。
+`apply_calibration.py` 的 `fmt()` 因此固定輸出兩位小數。
+
+**下一步(依序,不能跳)**:
+
+1. 量:`./robotctl args "cmd_linear_scale:=1.0 cmd_angular_scale:=1.0"` →
+   `./robotctl restart bringup` → `vel_sweep.py` 跑 x / yaw / y 三軸。
+2. 套:`apply_calibration.py --lin-scale <x> --ang-scale <yaw>`,**第一趟用預設的
+   保守值**(`max_vx 0.20` / `max_vtheta 0.80`)確認「會走、會停、不抖」。
+3. 兩個不在 YAML 裡的地方:driver 的 `cmd_*_scale`(launch arg,跑順了要寫回
+   `driver_node.py` 和 `robot_bringup.launch.py` 的預設值)、`teleop_node.py:69-70`
+   的 `linear_speed: 0.6` / `angular_speed: 1.5`(當初手工補償 8× 加上去的,校正後
+   會變成真實 0.6 m/s,**超過 0.42 的天花板**)。腳本最後會把這兩段印出來。
+4. 都穩了之後才談「鎖頭橫移」(`max_vel_theta` 壓到 0.4 左右、`max_vel_y` 拉到接近
+   `max_vel_x`)—— 省掉每個 90° 轉彎約 1.5 s,一趟約 10 個轉彎。
+5. AMCL 那條線還沒查:`update_min_a: 0.05` + `resample_interval: 1` 是否在餵抖動,
+   以及 2026-09-12 截圖裡粒子雲明顯沒收斂。和上面是獨立的兩件事。
+
+### 2026-10-10 — 標定完成、兩趟 Nav2 實跑錄檔,以及下次要測什麼
+
+**標定(已完成,捲尺驗過)** —— `vel_sweep.py` 三軸:x 斜率 0.1530 → `cmd_linear_scale 6.54`、
+yaw 0.1346 → `cmd_angular_scale 7.43`、y 0.1531(和 x 到小數第四位都一樣 —— 因為板子 PID
+把輪速鎖在目標值,回饋是輪速反推,**`/odom` 的 x/y 看不到打滑**,只能用捲尺驗)。
+捲尺:直走 1 m 讀 0.998、橫移 1 m 讀 1.074(滾子滑移,AMCL 會修)、自轉 360° 讀 352.6°。
+目前只存在 Pi 的 `~/.tirt_robot_args`,**還沒寫回 `driver_node.py` / `robot_bringup.launch.py` 預設值**。
+直走 1 m 車頭偏 +8~11°、橫移 1 m 偏 ~14°:陀螺儀量到的真實車身偏轉(使用者認為是馬達座晃,要修機構)。
+
+**AMCL 收緊**(odom 準了):alpha1-4 0.3→0.1、alpha5 0.2→0.15、sigma_hit 0.2→0.1、
+z_hit 0.5→0.8、z_rand 0.5→0.2。結果:粒子雲從散到地圖外幾公尺 → std x 5.7cm / y 4.3cm / yaw 5°。✅
+
+**Run 1**(`notes/nav_runs/2026-10-10_run1_swing.jsonl`,參數 = apply_calibration 保守值):
+目標正前方 43cm。DWB 從第一個 cycle 就下 `vy=-0.14`(**max_vel_y 上限,往右**),wz 一路爬到
+0.8(上限,往左),車頭轉 55° 甩尾進終點;`yaw_goal_tolerance 3.15` 所以朝向不管。
+→ 加了 `Twirling.scale 5.0`、加回 `RotateToGoal`、`yaw_goal_tolerance` 3.15→0.15。
+
+**Run 2**(`..._run2_twirling.jsonl`,加 Twirling 之後)—— 更糟,兩段不同的失敗:
+1. **起點規劃不出路徑**:目標 47cm 外空地,`GridBased: failed to create plan` ×14,recovery 的
+   spin / backup 都立刻 `Collision Ahead`。→ 車子自己的 footprint 在 costmap 裡壓到致命格。
+   0912_room 很小、牆近,也可能雷射把人腳或車上的線材標成障礙。**下次失敗當下跑
+   `tools/costmap_check.py`**,不要猜。
+2. 終於有路徑後:又是 `vx 0.2 / vy -0.14(上限)/ wz -0.69`,而且 `vy=-0.14` 連續 3.6 秒
+   一模一樣不變,車子往右前斜衝 ~50cm 偏離目標後 `Goal failed`。
+
+**最強的線索:輪速飽和。** 兩趟裡 odom 量到的速度都只有命令的 ~60%
+(cmd `0.2/-0.14` → odom `0.133/-0.078`),而 vel_sweep 單軸時是 1:1。麥克納姆每顆輪的速度
+是 `|vx|+|vy|+k|wz|`;`0.2+0.14+0.105×0.7 ≈ 0.41 m/s`,算回去**輪速天花板約 0.21 m/s**。
+注意 vel_sweep 只在 scale=1.0 下量到名目 0.6 = **真實 0.09 m/s**,校正後的速度範圍從來沒量過
+線性。DWB 的運動模型以為下多少就走多少,實際只走六成 → 預測軌跡全錯 → 累積側向誤差 →
+它加碼要更多 vy → 頂到上限卡死。這同時解釋 Run 1 和 Run 2 的 vy 黏在 -0.14。
+
+**下次的測試順序(一次一項,前一項過了才做下一項):**
+1. **量真實天花板**(Pi,scale 已是 6.54,所以斜率應該 ≈1.0,彎下去的地方就是天花板):
+   `python3 tools/vel_sweep.py --axis x --max 0.35`、`--axis y --max 0.35`、`--axis yaw --max 1.5`
+2. **把 Nav2 速度壓進天花板**,讓 `max_vel_x + max_vel_y + 0.105×max_vel_theta` ≤ 天花板的 80%。
+   天花板若真是 ~0.21:`apply_calibration.py --lin-scale 6.54 --ang-scale 7.43 --max-vx 0.12
+   --max-vy 0.06 --max-vtheta 0.4 --apply`(再手動把 `max_speed_xy` 設 0.12)。
+3. 換一個**大一點、空一點的地方**,用校正後的車**重建地圖**(0912_room 是 9/12 未校正時建的,
+   房間又小到 costmap 幾乎全紅),再跑 1 m 直線目標。
+4. 起點規劃失敗時當下跑 `tools/costmap_check.py`。
+5. 跑順了才把 6.54 / 7.43 寫回 driver 預設值並 commit。

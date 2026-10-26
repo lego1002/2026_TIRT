@@ -66,8 +66,8 @@ def get_key(settings, timeout):
 class MecanumTeleop(Node):
     def __init__(self):
         super().__init__('mecanum_teleop')
-        self.declare_parameter('linear_speed', 0.6)    # m/s at full deflection
-        self.declare_parameter('angular_speed', 1.5)   # rad/s at full deflection
+        self.declare_parameter('linear_speed', 0.2)    # m/s at full deflection
+        self.declare_parameter('angular_speed', 0.8)   # rad/s at full deflection
         self.declare_parameter('linear_max', 1.5)
         self.declare_parameter('angular_max', 4.0)
         self.declare_parameter('publish_rate', 20.0)   # Hz, also watchdog re-send

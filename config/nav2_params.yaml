@@ -27,23 +27,28 @@ amcl:
     # 麥克納姆會橫移,差速模型會把「原地平移」解釋成不可能發生的運動,粒子雲會被
     # 拉歪。OmniMotionModel 才吃得下 y 方向位移。
     robot_model_type: "nav2_amcl::OmniMotionModel"
-    # odom 雜訊參數。原版 0.2 是給乾淨編碼器的;這台是麥克納姆(滾子打滑)+ gyro
-    # 積分航向,不確定度大得多,所以放寬 → 粒子雲散得開一點,scan 才修得動它。
-    alpha1: 0.3     # 旋轉造成的旋轉誤差
-    alpha2: 0.3     # 平移造成的旋轉誤差
-    alpha3: 0.3     # 平移造成的平移誤差
-    alpha4: 0.3     # 旋轉造成的平移誤差
-    alpha5: 0.2     # omni 專用:橫移誤差
+    # odom 雜訊參數。2026-10-10 從 0.3 收到 0.1:當初放寬是因為 odom 沒校正
+    # (cmd/feedback 倍率錯、gyro 零點漂),現在捲尺實測直走 1 m 誤差 0.2%、
+    # 橫移 +7%、自轉 360° 誤差 2%。還用 0.3 的話,每走 5 cm 粒子就被撒開一大片,
+    # 雲散到地圖外好幾公尺(2026-10-10 截圖),位姿估計跟著亂跳 → 車子「很快但不準」。
+    alpha1: 0.1     # 旋轉造成的旋轉誤差
+    alpha2: 0.1     # 平移造成的旋轉誤差
+    alpha3: 0.1     # 平移造成的平移誤差
+    alpha4: 0.1     # 旋轉造成的平移誤差
+    alpha5: 0.15     # omni 專用:橫移誤差
 
     # === 光達模型(RPLidar C1) ===
     laser_model_type: "likelihood_field"
     laser_max_range: 12.0     # C1 規格上限;原版 100.0 是模擬器的假數字
     laser_min_range: 0.15     # 和 slam_toolbox 的 min_laser_range 一致,濾掉近距雜點
     max_beams: 120            # 房間小、牆多,多給一點 beam 匹配更穩(原版 60)
-    sigma_hit: 0.2
-    z_hit: 0.5
+    # 雷射權重(2026-10-10 收緊):sigma_hit 0.2 → 0.1 = 「scan 離牆 10 cm 以內才算貼」,
+    # 0.2 對 44 cm 走道太鬆,紅點偏半格也算對;z_hit 0.5 → 0.8 / z_rand 0.5 → 0.2
+    # = 更相信 lidar、少當雜訊。odom 準了之後,定位應該主要靠 scan 拉回來。
+    sigma_hit: 0.1
+    z_hit: 0.8
     z_max: 0.05
-    z_rand: 0.5
+    z_rand: 0.2
     z_short: 0.05
     lambda_short: 0.1
     laser_likelihood_max_dist: 2.0
@@ -261,7 +266,10 @@ controller_server:
       # 朝向對後續動作也沒有任何影響 —— 所以在終點前花時間轉正是純粹的浪費。
       # 這一項要和上面 critics 裡拿掉 RotateToGoal 一起看:兩者是同一個修正的兩半,
       # 只改其中一個沒有用(留著 RotateToGoal 的話它仍然會擋住平移)。
-      yaw_goal_tolerance: 3.15
+      # 2026-10-10 3.15 → 0.15(約 9°),RotateToGoal 加回:使用者要終點朝向正確。
+      # 當初拿掉的理由是「角速度被衰減 8 倍,原地轉轉不完」—— cmd_angular_scale
+      # 校正後真實 0.8 rad/s,轉 90° 只要 2 秒,那個理由已經不存在。
+      yaw_goal_tolerance: 0.15
 
     # =======================================================================
     # === 局部規劃器 FollowPath:DWB,但打開 y 方向(橫移) ===
@@ -278,7 +286,11 @@ controller_server:
     FollowPath:
       plugin: "dwb_core::DWBLocalPlanner"
       debug_trajectory_details: True
-      # === 速度上下限(2026-07-28 第一次實跑後調快:0.20 → 0.35 m/s)===
+      # === 速度上下限 ===
+      # ★ 不要手動改這一區。用 `python3 tools/apply_calibration.py`,它會把下面
+      #   三個地方連同速度下限一起改,並重驗煞停距離和 /odom 的飽和天花板。
+      #   ⚠ 這裡的數字是「真實 m/s」還是「名目值」,取決於 driver 的
+      #     cmd_linear_scale 有沒有校正過(未校正時真實速度只有名目的 1/8)。
       # ★ 改速度必須「三個地方一起改」,只改這裡沒有用:
       #     1. 這裡(DWB 產生候選軌跡的範圍)
       #     2. velocity_smoother 的 max_velocity / min_velocity(在檔案下方)
@@ -287,29 +299,42 @@ controller_server:
       #     3. behavior_server 的 max_rotational_vel(recovery 自轉時才用到)
       #   詳細的調參順序寫在 notes/nav2_tuning.md。
       min_vel_x: -0.20      # 允許倒車(進了死路要退出來)
-      max_vel_x: 0.35
-      min_vel_y: -0.25      # <<< 麥克納姆的關鍵:原版是 0.0
-      max_vel_y: 0.25       # <<< 同上
-      max_vel_theta: 1.5
-      # === 「速度不夠而打滑/走不動」的解法(2026-07-28 實跑後新增)===
-      # 症狀:DWB 為了貼齊路徑常常挑出 0.02-0.03 m/s 的軌跡,但這台 N20 + 麥克納姆
-      # 在那個速度下扭力不足,輪子原地打滑、車不動,而 nav2 以為自己在前進,最後被
-      # progress_checker 判定卡住而觸發 recovery。給一個「要走就走得夠快到真的會動」
-      # 的下限。
+      max_vel_x: 0.20
+      min_vel_y: -0.14      # <<< 麥克納姆的關鍵:原版是 0.0
+      max_vel_y: 0.14       # <<< 同上
+      max_vel_theta: 0.80
+      # === 速度下限:★ 這兩個值和 cmd_linear_scale 的標定是綁死的 ===
       #
-      # ⚠ 這兩個參數是綁在一起的,單獨設 min_speed_xy 完全沒有作用。DWB 的
-      #   KinematicParameters::isValidSpeed() 判斷式是
+      # 【它們是什麼】DWB 的 KinematicParameters::isValidSpeed() 判斷式是
       #       (平移慢於 min_speed_xy) AND (自轉慢於 min_speed_theta) → 丟掉
-      #   兩個條件是 AND。min_speed_theta 留在原版的 0.0 時,「自轉慢於 0.0」永遠
-      #   不成立,整條判斷永遠是 false,min_speed_xy 寫多少都不會被採用。
-      #   (語意其實是合理的:丟掉「哪個自由度都幾乎沒在動」的軌跡。純慢速自轉會保留。)
+      #   兩個條件是 **AND**,所以單獨設 min_speed_xy 完全沒有作用:min_speed_theta
+      #   留在原版的 0.0 時,「自轉慢於 0.0」永遠不成立,整條判斷永遠是 false。
+      #   要關掉這道下限,把 min_speed_theta 設 0.0 就夠了(本檔兩個都設成關閉值,
+      #   是為了讓意圖在 YAML 上看得出來,而不是靠「設 0 讓另一個變成死參數」)。
       #
-      # ⚠ 副作用:走道很窄時如果所有候選軌跡都被這個下限刷掉,DWB 會回報找不到
-      #   可行軌跡 → controller 失敗 → 觸發 recovery。所以刻意取保守值。要退回
-      #   原本行為就把兩個都設成 0.0。
-      min_speed_xy: 0.06
-      min_speed_theta: 0.15
-      max_speed_xy: 0.40    # x、y 合成速度上限(斜走時會同時用到兩軸)
+      # 【2026-07-28 為什麼加】DWB 常挑出 0.02-0.03 m/s 的軌跡,這台 N20 在那個速度
+      #   扭力不足,輪子原地打滑、車不動,nav2 卻以為在前進,最後被 progress_checker
+      #   判定卡住而觸發 recovery。
+      #
+      # 【2026-10-09 為什麼要拿掉】上面那個「扭力不足」本來就是 cmd 路徑 8× 衰減造成
+      #   的假象 —— 名目 0.03 的真實值只有 0.004 m/s,當然推不動。這道下限是 OK 繃,
+      #   不是解法。而且它自己會製造「到定點一直抖動」:速度 (0,0,0) 同時低於兩個門檻
+      #   → 被判 illegal → **「停住」這條軌跡根本不在候選名單裡**。只要 goal checker
+      #   還沒 latch,DWB 每個 cycle 都被迫挑一條非零軌跡;終點附近路徑只剩幾公分,
+      #   PathDist / PathAlign 分不出高下,就變成在一堆同分的非零軌跡裡亂挑 = 抖動。
+      #
+      # ⚠ 所以「校正 cmd_linear_scale」和「關掉這道下限」必須**同一次**做完:
+      #     只校正不關 → 下限語意從命令空間 0.0075 m/s 變成真實 0.06 m/s(嚴格 8 倍),
+      #                  44cm 走道裡會開始噴 no valid trajectories。
+      #     只關不校正 → 退回 2026-07-28 的原始症狀,輪子打滑、車不動。
+      #   用 `python3 tools/apply_calibration.py` 一次改完,它會連同 velocity_smoother
+      #   和 behavior_server 的速度一起改,並重驗煞停距離。不要手動只改這兩行。
+      #
+      # ⚠ 另一個副作用(下限開著時才有):走道很窄時如果所有候選軌跡都被刷掉,
+      #   DWB 會回報找不到可行軌跡 → controller 失敗 → 觸發 recovery。
+      min_speed_xy: -1.00    # 負值 = 關閉(見上面的說明)
+      min_speed_theta: 0.00    # 0.0 = 關閉(見上面的說明)
+      max_speed_xy: 0.29    # x、y 合成速度上限(斜走時會同時用到兩軸)
       # 加減速限制。★ 這是「開快」和「打滑」之間真正的取捨點,不是最高速。
       # 麥克納姆的滾子一打滑,里程計就毀了(這台的航向已經因此改用 gyro 積分,
       # 見 notes/SLAM_learning_note.md),所以最高速可以往上加,加速度要慢慢加。
@@ -346,7 +371,17 @@ controller_server:
       # 規則沒有規定完賽時車頭要朝哪(見下面 yaw_goal_tolerance),所以這道閘門是純損失。
       # 注意:PathAlign / GoalAlign 必須留著。三個轉向評分項如果一起拿掉,DWB 就沒有
       # 任何一項會懲罰旋轉,轉與不轉的軌跡分數完全相同,結果是隨機亂轉 —— 比現在更糟。
-      critics: ["Oscillation", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
+      # 2026-10-10 加 Twirling + 加回 RotateToGoal(見 yaw_goal_tolerance 的說明)。
+      # Twirling 的來由:實跑錄到叫它「直走 43cm」,DWB 卻一路下 vy=-0.14 + wz 爬到 0.8,
+      # 車頭轉了 55° 甩尾進終點。原因是沒有任何評分項真的在罰「邊走邊轉」——
+      # PathAlign/GoalAlign 只看車頭前 10cm 那一點,權重又刻意壓低,於是 vtheta 變成
+      # DWB 拿來「彎」軌跡終點的免費旋鈕。TwirlingCritic 罰 |vtheta|,但**只在有平移時**
+      # (純原地轉不罰),正好是麥克納姆要的:要轉就停下來轉,走的時候車頭鎖住。
+      critics: ["RotateToGoal", "Oscillation", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist", "Twirling"]
+      Twirling.scale: 5.0
+      RotateToGoal.scale: 32.0
+      RotateToGoal.slowing_factor: 2.0
+      RotateToGoal.lookahead_time: -1.0
       # 0.02 是 nav2 原廠預設,對上 PathDist 的 32.0 等於 1600:1 —— controller 幾乎
       # 完全不看障礙代價。撞牆這件事本身還是有硬約束(DWB 掃到 lethal 格會直接把該條
       # 軌跡判為 illegal),所以 scale 影響的是「偏好」:走道 44cm、inflation_radius
@@ -472,7 +507,7 @@ behavior_server:
     # 這是「★ 改速度要動的三個地方」的第 3 個。max 跟著 FollowPath 的
     # max_vel_theta 一起提到 1.5;min 原版 0.4rad/s 對這台小車偏快(min 太大會讓
     # 小角度修正變成猛甩),降到 0.3。
-    max_rotational_vel: 1.5
+    max_rotational_vel: 0.80
     min_rotational_vel: 0.3
     rotational_acc_lim: 3.0
 
@@ -510,8 +545,8 @@ velocity_smoother:
     #   四行必須和 FollowPath 的 max_vel_x / max_vel_y / max_vel_theta 與
     #   acc_lim_* / decel_lim_* 保持一致 —— 只改 FollowPath 的話,車速完全不會變,
     #   而你會以為參數沒生效而去亂調別的東西。
-    max_velocity: [0.35, 0.25, 1.5]
-    min_velocity: [-0.20, -0.25, -1.5]
+    max_velocity: [0.20, 0.14, 0.80]
+    min_velocity: [-0.20, -0.14, -0.80]
     max_accel: [1.5, 1.5, 3.0]
     max_decel: [-2.0, -2.0, -3.0]
     odom_topic: "odom"

@@ -23,11 +23,18 @@
 
     source /opt/ros/humble/setup.bash
     source dds/setup_dds.sh            # PC 端記得 DDS_SERVER=<pi_ip>
-    python3 tools/vel_sweep.py                 # 直線
-    python3 tools/vel_sweep.py --axis yaw      # 原地旋轉
+    python3 tools/vel_sweep.py                 # 直線(校 cmd_linear_scale)
+    python3 tools/vel_sweep.py --axis yaw      # 原地旋轉(校 cmd_angular_scale)
+    python3 tools/vel_sweep.py --axis y        # 橫移(量 max_vel_y 的真實天花板)
 
-⚠️  車子會依序用不同速度前進後退(正負交替,盡量留在原地,但仍會漂移)。
-    **請留 1.5 m 以上的淨空**,並把 teleop 關掉。Ctrl-C 會立刻停車。
+三軸都要跑。x / yaw 是校正(各自對應一個參數),y 是量測 —— 因為 ly 和 lx 乘的是
+同一個 cmd_linear_scale(driver_node.py:383-384),y 軸沒有自己的參數可以調,
+它要回答的是「橫移的真實上限在哪、有沒有自己的死區」。鎖頭橫移的跑法會讓一半
+路程走 y 軸,所以這個數字和 x 一樣重要。
+
+⚠️  車子會依序用不同速度正負交替移動(盡量留在原地,但仍會漂移)。
+    **請留 1.5 m 以上的淨空** —— `--axis x` 是前後,`--axis y` 是**左右**,
+    方向不一樣,別照著上一次的擺位就開跑。並把 teleop 關掉。Ctrl-C 會立刻停車。
 
 ⚠️  跑之前先把補償歸一,量到的才是板子的原始行為:
         ./run_robot.sh cmd_linear_scale:=1.0 cmd_angular_scale:=1.0
@@ -71,8 +78,12 @@ class VelSweep(Node):
         self._collecting = False
 
     def _odom_cb(self, msg):
-        v = (msg.twist.twist.angular.z if self.axis == 'yaw'
-             else msg.twist.twist.linear.x)
+        if self.axis == 'yaw':
+            v = msg.twist.twist.angular.z
+        elif self.axis == 'y':
+            v = msg.twist.twist.linear.y
+        else:
+            v = msg.twist.twist.linear.x
         with self._lock:
             if self._collecting:
                 self._buf.append(v)
@@ -81,6 +92,8 @@ class VelSweep(Node):
         t = Twist()
         if self.axis == 'yaw':
             t.angular.z = v
+        elif self.axis == 'y':
+            t.linear.y = v
         else:
             t.linear.x = v
         self.pub.publish(t)
@@ -211,10 +224,30 @@ def report(pts, axis):
 
     scale = 1.0 / a
     print()
-    print(f'→  {pname} = 1 / {a:.4f} = **{scale:.2f}**')
-    print()
-    print(f'   ./run_robot.sh {pname}:={scale:.2f}')
-    print()
+    if axis == 'y':
+        # driver_node.py:383-384 —— lx 和 ly 乘的是**同一個** cmd_linear_scale,
+        # 所以 y 軸量出來的斜率不是拿來設另一個參數的(沒有那個參數)。
+        # 它要回答的是另外兩個問題:
+        #   1. 橫移和直行的衰減倍率是不是同一個?麥克納姆的滾子橫移效率本來就
+        #      比直行差,如果兩者差很多,單一個 scale 服務不了兩軸 —— 那要嘛
+        #      替 ly 另開一個參數,要嘛把 max_vel_y 壓到「用 x 的 scale 也不會
+        #      超速」的值。
+        #   2. 橫移有沒有自己的靜摩擦死區(鎖頭橫移跑法會讓一半路程走這一軸,
+        #      所以 y 的死區和 x 的一樣重要)。
+        print(f'→  y 軸斜率 = {a:.4f}(x 軸請另外跑 --axis x 比對)')
+        print()
+        print('   判讀:')
+        print('     兩軸斜率相差 < 15%  → 共用 cmd_linear_scale 沒問題,')
+        print(f'                           max_vel_y 可以設到接近 max_vel_x。')
+        print('     y 明顯小於 x        → 橫移出力較弱。**不要**去調 scale')
+        print('                           (它是共用的,調了 x 會跟著錯),')
+        print(f'                           改成把 max_vel_y 壓到 x 的 {a:.2f}/斜率x 倍。')
+        print()
+    else:
+        print(f'→  {pname} = 1 / {a:.4f} = **{scale:.2f}**')
+        print()
+        print(f'   ./run_robot.sh {pname}:={scale:.2f}')
+        print()
 
     # 資料品質先判斷。R² 低的時候,截距(死區)是拿來擬合散亂點的自由參數,
     # 不代表任何物理意義 —— 2026-07-25 就踩過:R²=0.63 的資料被報成「死區 0.128 m/s」,
@@ -251,9 +284,9 @@ def report(pts, axis):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
-    ap.add_argument('--axis', choices=['x', 'yaw'], default='x')
+    ap.add_argument('--axis', choices=['x', 'y', 'yaw'], default='x')
     ap.add_argument('--max', type=float, default=None,
-                    help='掃描上限。預設 x=0.6 m/s、yaw=1.5 rad/s(teleop 的預設值)')
+                    help='掃描上限。預設 x/y=0.6 m/s、yaw=1.5 rad/s(teleop 的預設值)')
     ap.add_argument('--points', type=int, default=6, help='幾個命令點 (預設 6)')
     ap.add_argument('--hold', type=float, default=2.0,
                     help='每點維持幾秒 (預設 2.0,前半段當過渡丟掉)')
@@ -278,9 +311,12 @@ def main():
             node.stop()
         except Exception:  # noqa: BLE001
             pass
-        node.destroy_node()
+        # 先 shutdown 讓 spin 執行緒自己退出,再 destroy —— 反過來的話 node 在 spin
+        # 還在用它的時候被拆掉,C++ 端會 "terminate called without an active exception"。
         if rclpy.ok():
             rclpy.shutdown()
+        spin.join(timeout=2.0)
+        node.destroy_node()
     return 0
 
 
