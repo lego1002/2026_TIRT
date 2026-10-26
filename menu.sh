@@ -49,8 +49,18 @@ power_text() {
     case "$v" in
         0x0) printf '\e[32mOK\e[0m' ;;
         "")  printf '?' ;;
-        *)   if (( v & 0x1 )); then printf '\e[31m現在欠壓! (%s)\e[0m' "$v"
-             else printf '\e[33m開機後曾欠壓 (%s)\e[0m' "$v"; fi ;;
+        # 低 4 bit 是「現在」,16~19 bit 是「開機以來發生過」:
+        #   0x1 欠壓  0x2 降頻  0x4 被限速  0x8 溫度過高(軟限制 80°C)
+        # 不能一律說欠壓:2026-10-26 實測 0x80000 是過熱,原本的文字把人帶去查電源。
+        *)   local now=$(( v & 0xF )) past=$(( (v >> 16) & 0xF )) msg=""
+             (( now & 0x1 ))  && msg+="現在欠壓! "
+             (( now & 0x8 ))  && msg+="現在過熱! "
+             (( now & 0x6 ))  && msg+="現在降速中! "
+             (( past & 0x1 && !(now & 0x1) )) && msg+="開機後曾欠壓 "
+             (( past & 0x8 && !(now & 0x8) )) && msg+="開機後曾過熱 "
+             [ -z "$msg" ] && msg="開機後曾降速 "
+             if (( now )); then printf '\e[31m%s(%s)\e[0m' "$msg" "$v"
+             else printf '\e[33m%s(%s)\e[0m' "$msg" "$v"; fi ;;
     esac
 }
 
@@ -161,22 +171,15 @@ do_rviz() {
 
 do_health() {
     echo "檢查中(約 8 秒)..."
-    local tmp; tmp="$(mktemp -d)"
-    # hz 直接寫檔再 grep:接 pipe 的話 python 輸出是區塊緩衝,被 SIGINT 結束時常常什麼都沒吐出來。
-    # 三個 ros2 指令同時開,如果 daemon 還沒起來會一起搶著生它,結果全部空手而回。先把它叫起來。
-    ros2 daemon start >/dev/null 2>&1
-    timeout -s INT 7 ros2 topic hz /scan > "$tmp/scan" 2>/dev/null &
-    timeout -s INT 7 ros2 topic hz /odom > "$tmp/odom" 2>/dev/null &
-    timeout 7 ros2 topic echo --once /battery_voltage > "$tmp/batt" 2>/dev/null &
-    wait
-    local scan odom batt
-    scan="$(grep 'average rate' "$tmp/scan" | tail -1 | awk '{print $3}')"
-    odom="$(grep 'average rate' "$tmp/odom" | tail -1 | awk '{print $3}')"
-    batt="$(sed -n 's/^data: //p' "$tmp/batt" | head -1)"
-    rm -rf "$tmp"
+    # 量測交給一個 python 節點一次做完(理由見 tools/health_check.py 檔頭)。
+    local out scan odom batt
+    out="$(timeout 20 python3 "$REPO/tools/health_check.py" 5 2>/dev/null)"
+    scan="$(sed -n 's/^scan_hz=//p' <<< "$out")"
+    odom="$(sed -n 's/^odom_hz=//p' <<< "$out")"
+    batt="$(sed -n 's/^batt_v=//p' <<< "$out")"
+    [ -n "$batt" ] && batt="$batt V"
     echo
     printf '  樹莓派供電   %b\n' "$(power_text)"
-    [ -n "$batt" ] && batt="$(printf '%.2f V' "$batt")"
     printf '  電池電壓     %s\n' "${batt:-讀不到(底盤沒開?)}"
     printf '  光達 /scan   %s   (正常約 10 Hz)\n' "${scan:-沒有資料} ${scan:+Hz}"
     printf '  里程 /odom   %s   (正常約 20 Hz)\n' "${odom:-沒有資料} ${odom:+Hz}"
