@@ -127,6 +127,21 @@ do_nav() {
 
 do_rviz() {
     if busy rviz; then "$T" down rviz; echo "RViz 已關。"; return; fi
+    # 在 tmux 裡開的選單,DISPLAY 是「tmux 第一次啟動那條 ssh」的;MobaXterm 重連之後
+    # 那個號碼就失效了(2026-10-26 實測:RViz 對著死掉的 localhost:10.0,X 連線斷 → segfault,
+    # Windows 上什麼都沒出現,而新連線其實是 localhost:11.0)。所以檢查 X 轉送的 port
+    # (6000+N)還有沒有人在聽,失效就改用最新那條連線的。
+    local n port
+    n="${DISPLAY:-}"; n="${n#localhost:}"; n="${n%%.*}"
+    if [ -z "$n" ] || ! ss -tln 2>/dev/null | grep -q "127.0.0.1:$((6000 + n)) "; then
+        port="$(ss -tln 2>/dev/null | grep -o '127.0.0.1:60[0-9][0-9] ' | cut -d: -f2 | sort -n | tail -1)"
+        if [ -n "$port" ]; then
+            export DISPLAY="localhost:$((port - 6000)).0"
+            echo "原本的畫面轉送(${n:+localhost:$n.0})已失效,改用目前的連線 $DISPLAY。"
+        else
+            unset DISPLAY
+        fi
+    fi
     if [ -z "${DISPLAY:-}" ]; then
         echo "這條連線沒有畫面轉送(DISPLAY 是空的)。"
         echo "MobaXterm:Session 設定 → Advanced SSH settings → 勾 'X11-forwarding',重新連線。"
