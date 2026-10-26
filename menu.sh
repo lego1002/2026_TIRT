@@ -121,7 +121,8 @@ do_nav() {
     echo
     echo "導航啟動中(Pi 上大約要 20~40 秒)。開 RViz(選 5)後:"
     echo "  1. 車子在地圖上的位置不對 → 工具列 '2D Pose Estimate' 點車子真正的位置、拖出朝向"
-    echo "  2. 工具列 'Nav2 Goal' 點目標、拖出朝向 → 車子自己走過去"
+    echo "  2. 選 9 讓它原地定位,直到綠色箭頭縮成一小團"
+    echo "  3. 工具列 'Nav2 Goal' 點目標、拖出朝向 → 車子自己走過去"
 }
 
 do_rviz() {
@@ -189,6 +190,7 @@ while true; do
     echo "  6) 健康檢查            (供電、電池、光達、里程)"
     echo "  7) 看某一段的輸出      (出問題時看錯誤訊息)"
     echo "  8) 進入 tmux(進階)    (Ctrl-a d 回來)"
+    echo "  9) 原地定位            (導航中,2D Pose Estimate 之後用)"
     echo "  0) 全部關掉"
     echo "  q) 離開選單            (背景程式繼續跑)"
     read -r -p "選擇: " c || exit 0
@@ -202,6 +204,7 @@ while true; do
         6) do_health ;;
         7) do_log ;;
         8) "$T" attach; continue ;;
+        9) if busy nav; then python3 "$REPO/tools/amcl_settle.py"; else echo "導航沒開。先選 4。"; fi ;;
         0) "$T" down; echo "全部關掉了(光達馬達也停了)。" ;;
         q|Q) echo "選單已離開。再打 ./menu.sh 就回來。"; exit 0 ;;
         *) echo "沒有這個選項。"; continue ;;
