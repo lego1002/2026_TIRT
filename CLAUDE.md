@@ -654,10 +654,13 @@ running in the `tirt` tmux session.
   `dds/fastdds_solo.xml` + `ROS_LOCALHOST_ONLY=1` **before** any alias check, so no discovery server, no
   `10.77.0.2` alias, no WiFi needed — a battery-only boot works. `rm ~/.tirt_solo` restores the two-machine
   setup below (still intact). `pi/oled_boot.sh` honours the flag too (restart `tirt-oled` after switching).
-- `fastdds_solo.xml` sets **`maxInitialPeersRange` 64**: with unicast initial peers on `127.0.0.1` Fast DDS
-  only probes participant ids 0..3 by default, so two late participants (e.g. `ominibot_driver` and the CLI)
-  never discover each other — `/odom` vanished from `topic list` and slam sat at "queue is full". Lo has no
-  MULTICAST flag, hence unicast peers at all.
+- `fastdds_solo.xml` is a **deliberately empty** default profile; `ROS_LOCALHOST_ONLY=1` does the
+  confinement and Fast DDS's default multicast discovery works fine on `lo`. It exists only because every
+  launcher's guard checks `FASTRTPS_DEFAULT_PROFILES_FILE` is non-empty. **Do not add `initialPeersList`
+  back:** the first version used unicast peers on 127.0.0.1 and a fresh process needed **36-85 s** to see 8
+  nodes (default: first try, ~3 s, benchmarked on domain 42) — ros2 CLI was randomly blind (half-empty
+  `topic list`, `lifecycle get` → "Node not found"), and with the default `maxInitialPeersRange` 4 the
+  driver's `/odom` was never discovered at all.
 - `pi/robot_tmux.sh` in solo mode: default windows `bringup shell`; `slam`/`nav`/`rviz` are opened by name
   (`nav` reads the map from `~/.tirt_nav_map`, `rviz` its config from `~/.tirt_rviz_cfg`); no alias wait;
   new `busy <win>` subcommand for the menu. Stopping `nav` **SIGKILLs the nav2 container** afterwards — on the
@@ -665,10 +668,23 @@ running in the `tirt` tmux session.
   the new slam. That pkill pattern is anchored `^/opt/ros/[^ ]*/component_container_isolated` because the
   unanchored one matched (and killed) a shell whose command line merely contained it.
 - Slam is started ~5 s **after** bringup, because `run_robot.sh` pkills any `async_slam_toolbox_node` on start.
+- Menu health check uses `tools/health_check.py` (one rclpy node counts `/scan`, `/odom`, reads
+  `/battery_voltage`); backgrounded `ros2 topic hz` + `timeout -s INT` reported a healthy 20 Hz `/odom` as
+  "no data". Its power line decodes `get_throttled` bits — `0x80000` is **over-temperature**, not
+  under-voltage (the Pi hit 81 °C with nav2+RViz+Claude Code; it needs a heatsink/fan).
+- Keyboard teleop is allowed in navigation mode: Nav2 publishes **no** `/cmd_vel` while idle (0 msgs / 6 s).
+  Only teleop *plus* an active Nav2 goal fights.
+- Nav2 on the Pi: `controller_frequency` 10, DWB 8×6×10 samples, local costmap 5 Hz (was 20 / 1440 / 10 —
+  continuous "Control loop missed its desired rate", then "Failed to make progress"). After the change, a
+  goal with RViz closed: ~11 Hz controller, zero misses, SUCCEEDED.
+- **"The car turned 90° instead of going straight"** = Nav2's `spin` recovery (`Turning 1.57 for spin
+  behavior`), which fires after the planner fails (`failed to generate a valid path`). Read the planner line
+  first; on the 75 cm test box `rmml_table_1026`, `costmap_check.py` shows only **0.09 m²** reachable from
+  the robot, so most goals are unplannable by geometry, not by parameters.
 - Verified on hardware 2026-10-26: `/scan` 10 Hz, `/odom` 20 Hz, map published at 0.025 m, no queue-full;
   Nav2 all lifecycle nodes active on the Pi; nav→mapping switch leaves no orphans; lidar logs `Stop motor` on
-  every down; `get_throttled` 0x0 throughout (self-soldered USB-C supply). RViz-over-X from the menu not yet
-  exercised. CPU budget for slam+nav2+RViz together on the Pi is the open question — keep RViz closed in runs.
+  every down; `get_throttled` 0x0 throughout (self-soldered USB-C supply). RViz via MobaXterm X works
+  (menu falls back to the live display port when `$DISPLAY` is stale after a reconnect). CPU budget for slam+nav2+RViz together on the Pi is the open question — keep RViz closed in runs.
 
 ## Runtime deployment (two-machine setup — superseded by `menu.sh`, still works with `rm ~/.tirt_solo`)
 
