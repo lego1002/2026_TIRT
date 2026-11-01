@@ -1,0 +1,19 @@
+# TIRT 網路線直連(筆電 ↔ Pi 一條網路線,不經過任何路由器 / WiFi)。
+# 安裝:sudo ./net/install_pi_eth.sh
+#
+# 為什麼:場地 WiFi 和手機熱點都不能用時,這是唯一不靠無線電的 ssh 路徑。
+# 直連時沒有 DHCP 伺服器,eth0 原本(50-cloud-init 的 dhcp4)只會永遠卡在
+# "configuring" 沒有 IPv4,所以這裡多掛一個固定位址。netplan 會把這份和
+# 50-cloud-init 的 eth0 合併:dhcp4 照舊,插到一般路由器時照樣拿 DHCP 位址。
+#
+# 筆電那張網卡(USB hub 的 RJ45)設固定 IP 10.78.0.1 / 255.255.255.0,不填閘道。
+# 不填閘道是刻意的:這個網段只有兩台機器,不能搶走 WiFi 的預設路由。
+#
+# 網段 10.78.0.x 刻意和 WiFi 別名 10.77.0.x 錯開,兩條路同時接著也不會打架。
+# 位址常數記在 net/tirt_net.conf(TIRT_PI_ETH_IP / TIRT_PC_ETH_IP)。
+network:
+  version: 2
+  ethernets:
+    eth0:
+      optional: true          # 沒插線也不要拖慢開機
+      addresses: [10.78.0.2/24]

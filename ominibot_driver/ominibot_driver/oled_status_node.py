@@ -16,7 +16,9 @@ laptop from reaching the robot at all. It alternates between the SSID and the
 DHCP address (with "+A" when the 10.77.0.2 two-machine alias is also present).
 When wifi is not associated the whole panel turns into a rescue page that says
 to switch on the phone hotspot already listed in net/60-tirt-wifi.yaml -- the
-venue fallback that needs no screen, keyboard or sudo on the robot.
+venue fallback that needs no screen, keyboard or sudo on the robot. With a
+cable plugged into eth0 (net/70-tirt-eth.yaml, 10.78.0.2) its address joins
+the rotation and the rescue page, as the no-radio-at-all fallback.
 
 Rates are computed from arrival timestamps rather than message headers so
 that a stalled publisher reads as 0.0 Hz instead of freezing at its last
@@ -125,6 +127,7 @@ class OledStatus(Node):
         # hint on the no-wifi page (the phone hotspot's name, as listed in
         # net/60-tirt-wifi.yaml); the panel never changes any network config.
         self.declare_parameter('wifi_iface', 'wlan0')
+        self.declare_parameter('eth_iface', 'eth0')
         self.declare_parameter('rescue_ssid', 'Legogogoro')
 
         p = self.get_parameter
@@ -143,6 +146,8 @@ class OledStatus(Node):
         self.rate_scan = RateTracker()
         self._blink = False
         self.wifi_iface = p('wifi_iface').value
+        self.eth_iface = p('eth_iface').value
+        self._eth_ip = None   # set only while a cable is plugged in
         self.rescue_ssid = p('rescue_ssid').value
         self._net = (None, None, False)   # (ssid, ip, alias present)
         self._net_checked = 0.0
@@ -342,6 +347,16 @@ class OledStatus(Node):
             alias = any(a.startswith('10.77.0.') for a in addrs)
             dhcp = [a for a in addrs if not a.startswith('10.77.0.')]
             ip = dhcp[0] if dhcp else None
+            self._eth_ip = None
+            with open(f'/sys/class/net/{self.eth_iface}/carrier') as fh:
+                plugged = fh.read().strip() == '1'
+            if plugged:
+                out = subprocess.run(
+                    ['ip', '-4', '-o', 'addr', 'show', 'dev', self.eth_iface],
+                    capture_output=True, text=True, timeout=2.0,
+                ).stdout
+                eth = [ln.split()[3].split('/')[0] for ln in out.splitlines() if len(ln.split()) > 3]
+                self._eth_ip = eth[0] if eth else 'no IPv4'
         except Exception:  # noqa: BLE001 - a status panel must never take the node down
             pass
         self._net = (ssid, ip, alias)
@@ -359,8 +374,11 @@ class OledStatus(Node):
             d.text((0, 0), f"!! NO WIFI !!  {lost}s", fill="white")
         d.text((0, 11), "Turn on phone hotspot", fill="white")
         d.text((0, 21), f" {self.rescue_ssid or '(SSID in netplan)'}"[:21], fill="white")
-        d.text((0, 31), "Laptop joins it too,", fill="white")
-        d.text((0, 41), "ssh to IP shown here", fill="white")
+        d.text((0, 31), "then ssh IP on here", fill="white")
+        if self._eth_ip:
+            d.text((0, 41), f"Cable: {self._eth_ip}"[:21], fill="white")
+        else:
+            d.text((0, 41), "or plug LAN cable", fill="white")
         d.text((0, 54), "BAT  --.-V" if batt is None else f"BAT {batt:5.2f}V",
                fill="white")
 
@@ -387,9 +405,14 @@ class OledStatus(Node):
                 self._draw_rescue(d, batt)
                 return
 
-            # Alternate every ~3 s: which network, then where to ssh.
-            if int(time.monotonic() / 3.0) % 2 == 0:
+            # Rotate every ~3 s: which network, where to ssh, and the cable
+            # address when one is plugged in.
+            pages = 3 if self._eth_ip else 2
+            page = int(time.monotonic() / 3.0) % pages
+            if page == 0:
                 d.text((0, 0), f"W {ssid}"[:21], fill="white")
+            elif page == 2:
+                d.text((0, 0), f"LAN {self._eth_ip}"[:21], fill="white")
             else:
                 top = f"IP {ip}" if ip else "IP waiting DHCP"
                 d.text((0, 0), (top + (" +A" if alias else ""))[:21], fill="white")

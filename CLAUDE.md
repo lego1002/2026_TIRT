@@ -299,7 +299,8 @@ human-editable text.
     (`+A` when the 10.77.0.2 alias is also held) — the DHCP address, because that is what MobaXterm ssh's to
     in solo mode. When `iw dev wlan0 link` reports no association the whole panel becomes a rescue page
     telling the operator to switch on the phone hotspot already listed in `net/60-tirt-wifi.yaml` (param
-    `rescue_ssid` prints its name). Read-only: the panel never changes network config.
+    `rescue_ssid` prints its name). With a cable in eth0 the rotation adds `LAN <ip>` and the rescue page
+    shows it. Read-only: the panel never changes network config.
     Design details worth not re-deriving: rates come from **arrival timestamps, not message headers**, so a
     stalled publisher reads 0.0 Hz instead of freezing at its last value; all three subscriptions are
     **BEST_EFFORT depth 1**, because a best-effort subscriber matches both reliable and best-effort
@@ -358,6 +359,12 @@ human-editable text.
     **interface** level, not per-SSID (a per-connection setting would need redoing for every new venue):
     a NetworkManager dispatcher script `/etc/NetworkManager/dispatcher.d/90-tirt-alias`, or a
     systemd-networkd `.network.d/tirt-alias.conf` drop-in, whichever the laptop actually uses.
+  - `net/70-tirt-eth.yaml` + `sudo ./net/install_pi_eth.sh` — **cable-direct rescue** (2026-11-01): adds a
+    static `10.78.0.2/24` on the Pi's `eth0` *on top of* cloud-init's `dhcp4` (netplan merges them; verified
+    with `netplan generate --root-dir`). Laptop's USB-hub NIC gets `10.78.0.1/24`, no gateway, then
+    `ssh lego@10.78.0.2`. Without it a laptop↔Pi cable leaves eth0 stuck in `configuring` with IPv6
+    link-local only, since there is no DHCP server on a direct link. Separate subnet from the 10.77 wifi
+    alias so both can be up at once. Constants in `tirt_net.conf` (`TIRT_PI_ETH_IP`/`TIRT_PC_ETH_IP`).
   - `net/alias_now.sh pi|pc [--off]` — adds the alias **non-persistently** (`ip addr add`, gone on reboot).
     The escape hatch for "I want to drive today and haven't filled in the WiFi passwords yet", and for
     debugging. Once the two installers above have run, this is never needed.
