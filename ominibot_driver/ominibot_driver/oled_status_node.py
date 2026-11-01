@@ -9,11 +9,14 @@ laptop attached, so `ros2 topic echo` is not available and a flat pack or a
 dead lidar is otherwise invisible until the robot misbehaves on the floor.
 Everything drawn here answers a question you would otherwise need the PC for.
 
-The IP line matters more than it looks: the robot's DDS link is pinned to a
-static 10.77.0.2 alias that only exists once wifi associates, so "did this
-boot onto the right network" is a real pre-race check -- and it is exactly
-the check you cannot run from the PC, because failing it is what stops the
-PC from seeing the robot at all.
+The top line matters more than it looks: the operator drives everything over
+ssh, and "which wifi did this join, and what address do I ssh to" is exactly
+the check you cannot run from the laptop, because failing it is what stops the
+laptop from reaching the robot at all. It alternates between the SSID and the
+DHCP address (with "+A" when the 10.77.0.2 two-machine alias is also present).
+When wifi is not associated the whole panel turns into a rescue page that says
+to switch on the phone hotspot already listed in net/60-tirt-wifi.yaml -- the
+venue fallback that needs no screen, keyboard or sudo on the robot.
 
 Rates are computed from arrival timestamps rather than message headers so
 that a stalled publisher reads as 0.0 Hz instead of freezing at its last
@@ -118,6 +121,12 @@ class OledStatus(Node):
         # on the glass: a dead board must not look like a healthy pack.
         self.declare_parameter('batt_stale_after', 60.0)
 
+        # Network readout / rescue page. `rescue_ssid` is only printed as a
+        # hint on the no-wifi page (the phone hotspot's name, as listed in
+        # net/60-tirt-wifi.yaml); the panel never changes any network config.
+        self.declare_parameter('wifi_iface', 'wlan0')
+        self.declare_parameter('rescue_ssid', 'Legogogoro')
+
         p = self.get_parameter
         self.stale_after = p('stale_after').value
         self.batt_full = p('batt_full_v').value
@@ -133,8 +142,11 @@ class OledStatus(Node):
         self.rate_odom = RateTracker()
         self.rate_scan = RateTracker()
         self._blink = False
-        self._ip = '...'
-        self._ip_checked = 0.0
+        self.wifi_iface = p('wifi_iface').value
+        self.rescue_ssid = p('rescue_ssid').value
+        self._net = (None, None, False)   # (ssid, ip, alias present)
+        self._net_checked = 0.0
+        self._wifi_lost_at = None
 
         # BEST_EFFORT everywhere: a best-effort subscriber matches both
         # best-effort and reliable publishers, while a reliable subscriber
@@ -300,26 +312,57 @@ class OledStatus(Node):
                 self.batt_v = volts
                 self.batt_stamp = time.monotonic()
 
-    def _host_ip(self):
-        """Cheapest reliable read of the current global IPv4, refreshed slowly.
+    def _net_status(self):
+        """(ssid, ip, alias) for the wifi interface, refreshed every 5 s.
 
-        Prefers the 10.77.0.x DDS alias when present -- that is the address the
-        PC actually talks to, so it is the one worth showing.
+        ssid is None when not associated. ip is the DHCP address -- the one to
+        ssh to from MobaXterm -- not the 10.77.0.x alias, which only a laptop
+        holding 10.77.0.1 can reach; the alias is reported as a flag instead.
         """
-        if time.monotonic() - self._ip_checked < 5.0:
-            return self._ip
-        self._ip_checked = time.monotonic()
+        if time.monotonic() - self._net_checked < 5.0:
+            return self._net
+        self._net_checked = time.monotonic()
+        ssid = ip = None
+        alias = False
         try:
+            link = subprocess.run(
+                ['iw', 'dev', self.wifi_iface, 'link'],
+                capture_output=True, text=True, timeout=2.0,
+                env={'PATH': '/usr/sbin:/sbin:/usr/bin:/bin'},
+            ).stdout
+            for ln in link.splitlines():
+                ln = ln.strip()
+                if ln.startswith('SSID:'):
+                    ssid = ln[5:].strip() or '?'
             out = subprocess.run(
-                ['ip', '-4', '-o', 'addr', 'show', 'scope', 'global'],
+                ['ip', '-4', '-o', 'addr', 'show', 'dev', self.wifi_iface],
                 capture_output=True, text=True, timeout=2.0,
             ).stdout
             addrs = [ln.split()[3].split('/')[0] for ln in out.splitlines() if len(ln.split()) > 3]
-            alias = [a for a in addrs if a.startswith('10.77.0.')]
-            self._ip = alias[0] if alias else (addrs[0] if addrs else 'no-net')
+            alias = any(a.startswith('10.77.0.') for a in addrs)
+            dhcp = [a for a in addrs if not a.startswith('10.77.0.')]
+            ip = dhcp[0] if dhcp else None
         except Exception:  # noqa: BLE001 - a status panel must never take the node down
-            self._ip = 'ip-err'
-        return self._ip
+            pass
+        self._net = (ssid, ip, alias)
+        if ssid is None:
+            if self._wifi_lost_at is None:
+                self._wifi_lost_at = time.monotonic()
+        else:
+            self._wifi_lost_at = None
+        return self._net
+
+    def _draw_rescue(self, d, batt):
+        """No wifi: say how to get ssh back without a screen or keyboard."""
+        lost = int(time.monotonic() - (self._wifi_lost_at or time.monotonic()))
+        if self._blink:
+            d.text((0, 0), f"!! NO WIFI !!  {lost}s", fill="white")
+        d.text((0, 11), "Turn on phone hotspot", fill="white")
+        d.text((0, 21), f" {self.rescue_ssid or '(SSID in netplan)'}"[:21], fill="white")
+        d.text((0, 31), "Laptop joins it too,", fill="white")
+        d.text((0, 41), "ssh to IP shown here", fill="white")
+        d.text((0, 54), "BAT  --.-V" if batt is None else f"BAT {batt:5.2f}V",
+               fill="white")
 
     def _draw(self):
         from luma.core.render import canvas
@@ -337,8 +380,19 @@ class OledStatus(Node):
         odom_dead = self.rate_odom.stale(self.stale_after)
         scan_dead = self.rate_scan.stale(self.stale_after)
 
+        ssid, ip, alias = self._net_status()
+
         with canvas(self.device) as d:
-            d.text((0, 0), f"TIRT {self._host_ip()}", fill="white")
+            if ssid is None:
+                self._draw_rescue(d, batt)
+                return
+
+            # Alternate every ~3 s: which network, then where to ssh.
+            if int(time.monotonic() / 3.0) % 2 == 0:
+                d.text((0, 0), f"W {ssid}"[:21], fill="white")
+            else:
+                top = f"IP {ip}" if ip else "IP waiting DHCP"
+                d.text((0, 0), (top + (" +A" if alias else ""))[:21], fill="white")
             d.line((0, 10, w - 1, 10), fill="white")
 
             # Battery: hide the text on alternate frames when low, so a flat

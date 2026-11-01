@@ -295,6 +295,11 @@ human-editable text.
     `batt_poll_period`, `batt_listen_s`, and `batt_stale_after` (60 s — a reading older than that reverts to
     `--` rather than leaving a dead board looking like a healthy pack). Verified on hardware 2026-09-06:
     12.17-12.24 V read standalone, and a driver started underneath it opened the port with no retry needed.
+    **Network line / no-wifi rescue page** (2026-11-01): the top line alternates `W <ssid>` and `IP <dhcp>`
+    (`+A` when the 10.77.0.2 alias is also held) — the DHCP address, because that is what MobaXterm ssh's to
+    in solo mode. When `iw dev wlan0 link` reports no association the whole panel becomes a rescue page
+    telling the operator to switch on the phone hotspot already listed in `net/60-tirt-wifi.yaml` (param
+    `rescue_ssid` prints its name). Read-only: the panel never changes network config.
     Design details worth not re-deriving: rates come from **arrival timestamps, not message headers**, so a
     stalled publisher reads 0.0 Hz instead of freezing at its last value; all three subscriptions are
     **BEST_EFFORT depth 1**, because a best-effort subscriber matches both reliable and best-effort
