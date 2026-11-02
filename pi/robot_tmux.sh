@@ -255,6 +255,12 @@ cmd_up() {
     local list=("$@")
     [ ${#list[@]} -eq 0 ] && list=("${WINDOWS[@]}")
     local w
+    # 筆電看 RViz 模式:Pi 自己的節點也靠 Discovery Server 找彼此,所以不管 up 的是哪一段
+    # (menu.sh 是用 `up bringup nav` 這種明講的寫法),dds 沒在跑就先補開。
+    # 2026-11-02 實測:選 0 全關再選 4,dds 沒起來 → 筆電 RViz 全空,Pi 上的 Nav2 也收不到 /scan。
+    if [ "$SOLO" = 1 ] && [ -f "$HOME/.tirt_laptop_rviz" ] && [[ " ${list[*]} " != *" dds "* ]]; then
+        if ! { tmux has-session -t "$S" 2>/dev/null && win_busy dds; }; then list=(dds "${list[@]}"); fi
+    fi
     for w in "${list[@]}"; do
         start_win "$w"
         # discovery server 要先站穩,後面的節點才找得到它。

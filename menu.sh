@@ -64,6 +64,13 @@ power_text() {
     esac
 }
 
+# 「去哪裡開 RViz」依模式不同:筆電模式是在筆電打指令,不是選 5。
+rviz_hint() {  # $1 = map | nav
+    local arg=""; [ "${1:-}" = nav ] && arg=" nav"
+    if [ -f "$HOME/.tirt_laptop_rviz" ]; then echo "在 Ubuntu 筆電的終端機打 ./run_rviz.sh$arg"
+    else echo "選 5 開 RViz"; fi
+}
+
 need_bringup() {
     busy bringup && return 0
     echo "底盤+光達還沒開。請先選 1(建圖)或 4(導航)。"
@@ -77,7 +84,7 @@ do_mapping() {
     if ! busy bringup; then "$T" up bringup; echo "等底盤+光達起來..."; sleep 5; fi
     "$T" up slam
     echo
-    echo "建圖開始了。開 RViz(選 5)大約 10~15 秒後會看到地圖。"
+    echo "建圖開始了。$(rviz_hint map),大約 10~15 秒後會看到地圖。"
     echo "接著選 2 用鍵盤慢慢開車把迷宮走一遍,走完選 3 存地圖。"
 }
 
@@ -108,7 +115,9 @@ do_save() {
     read -r -p "地圖名字 [Enter = $def]: " name
     name="${name:-$def}"
     if [[ ! "$name" =~ ^[A-Za-z0-9_-]+$ ]]; then echo "名字只能用英文、數字、_ 和 -。"; return; fi
-    "$REPO/save_map.sh" "$name" && echo "存好了:maps/$name.yaml(之後選 4 就能選到它)"
+    "$REPO/save_map.sh" "$name" || return
+    echo "存好了:maps/$name.yaml"
+    echo "建圖還開著:可以繼續開車補掃,再選 3 存一次(換個名字或覆蓋都行)。"
 }
 
 do_nav() {
@@ -132,7 +141,7 @@ do_nav() {
     echo "$REPO/car_assemble_description/rviz/view_nav2.rviz" > "$HOME/.tirt_rviz_cfg"
     busy rviz && "$T" restart rviz >/dev/null
     echo
-    echo "導航啟動中(Pi 上大約要 20~40 秒)。開 RViz(選 5)後:"
+    echo "導航啟動中(Pi 上大約要 20~40 秒)。$(rviz_hint nav),然後:"
     echo "  1. 車子在地圖上的位置不對 → 工具列 '2D Pose Estimate' 點車子真正的位置、拖出朝向"
     echo "  2. 選 9 讓它原地定位,直到綠色箭頭縮成一小團"
     echo "  3. 工具列 'Nav2 Goal' 點目標、拖出朝向 → 車子自己走過去"
