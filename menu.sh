@@ -155,6 +155,14 @@ do_rviz() {
             unset DISPLAY
         fi
     fi
+    if [ -z "${DISPLAY:-}" ] && [ -f "$HOME/.tirt_laptop_rviz" ]; then
+        # 筆電模式下選 5 幾乎都是誤會:5 是「Pi 算、畫面轉過去」,筆電模式是筆電自己算。
+        echo "現在是「筆電看 RViz」模式(選項 l),RViz 不用在 Pi 開。"
+        echo "請在 Ubuntu 筆電「自己的終端機」(不是 ssh 進 Pi 的那個)打:"
+        echo "    cd ~/2026_TIRT && ./run_rviz.sh        # 建圖時"
+        echo "    cd ~/2026_TIRT && ./run_rviz.sh nav    # 導航時"
+        return
+    fi
     if [ -z "${DISPLAY:-}" ]; then
         echo "這條連線沒有畫面轉送(DISPLAY 是空的)。"
         echo "MobaXterm:Session 設定 → Advanced SSH settings → 勾 'X11-forwarding',重新連線。"
