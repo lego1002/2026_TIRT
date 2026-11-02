@@ -365,6 +365,11 @@ human-editable text.
     `ssh lego@10.78.0.2`. Without it a laptop↔Pi cable leaves eth0 stuck in `configuring` with IPv6
     link-local only, since there is no DHCP server on a direct link. Separate subnet from the 10.77 wifi
     alias so both can be up at once. Constants in `tirt_net.conf` (`TIRT_PI_ETH_IP`/`TIRT_PC_ETH_IP`).
+  - **`netplan try` rollback breaks networking on this Pi** (netplan 0.107.1, hit 2026-11-02): if Enter isn't
+    pressed within 120 s, the rollback rewrites `/run/systemd/network/10-netplan-*.network` as root:root
+    0600, networkd logs `Permission denied`, and wlan0 stays associated with **no IP at all** (alias too) —
+    unreachable until reboot. Normal boots write 0640 root:systemd-network and are fine. Both Pi installers
+    now source `net/netplan_try_guard.sh`, whose EXIT trap restores the group/mode and `networkctl reload`s.
   - `net/alias_now.sh pi|pc [--off]` — adds the alias **non-persistently** (`ip addr add`, gone on reboot).
     The escape hatch for "I want to drive today and haven't filled in the WiFi passwords yet", and for
     debugging. Once the two installers above have run, this is never needed.

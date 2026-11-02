@@ -9,6 +9,7 @@ set -euo pipefail
 
 _here="$( cd "$( dirname "${BASH_SOURCE[0]:-$0}" )" && pwd )"
 source "$_here/tirt_net.conf"
+source "$_here/netplan_try_guard.sh"   # try 回滾會弄壞 networkd 權限,見該檔
 
 SRC="$_here/70-tirt-eth.yaml"
 DST="/etc/netplan/70-tirt-eth.yaml"
