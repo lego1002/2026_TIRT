@@ -27,6 +27,7 @@ setup(
             'ominibot_driver_node = ominibot_driver.driver_node:main',
             'mecanum_teleop = ominibot_driver.teleop_node:main',
             'oled_status = ominibot_driver.oled_status_node:main',
+            'loc_status = ominibot_driver.loc_status_node:main',
         ],
     },
 )

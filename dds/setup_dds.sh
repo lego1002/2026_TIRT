@@ -28,10 +28,17 @@ _dds_has_ip() { ip -4 -o addr show scope global 2>/dev/null | grep -q " $1/"; }
 # 放在別名判斷之前:單機模式根本不需要別名,沒連 WiFi 的純電池開機也要能跑。
 if [ -n "${TIRT_ROLE:-}" ]; then
     _dds_role="$TIRT_ROLE"
+elif [ -f "$HOME/.tirt_solo" ] && [ -f "$HOME/.tirt_laptop_rviz" ]; then
+    # 單機 + 讓 Ubuntu 筆電看 RViz(menu.sh 選項 l)。Pi 節點仍全在本機,
+    # 只是多開 Discovery Server 並放行 WiFi / 網路線網卡,見 fastdds_solo_net.xml。
+    _dds_role=solo_net
 elif [ -f "$HOME/.tirt_solo" ]; then
     _dds_role=solo
 elif _dds_has_ip "$TIRT_PI_IP"; then
     _dds_role=pi
+elif _dds_has_ip "${TIRT_PC_ETH_IP:-10.78.0.1}"; then
+    # 筆電用網路線直連 Pi(線比 WiFi 穩,兩者都有時選線)
+    _dds_role=pc_eth
 elif _dds_has_ip "$TIRT_PC_IP"; then
     _dds_role=pc
 else
@@ -64,9 +71,13 @@ else
         if [ "$_dds_role" = solo ]; then
             export ROS_LOCALHOST_ONLY=1
             echo "setup_dds: role=solo(單機,只走 127.0.0.1)  profile=$_dds_profile"
+        elif [ "$_dds_role" = solo_net ]; then
+            export ROS_LOCALHOST_ONLY=0
+            echo "setup_dds: role=solo_net(單機,筆電可看 RViz)  server=127.0.0.1:${TIRT_DDS_PORT:-11811}  profile=$_dds_profile"
         else
             export ROS_LOCALHOST_ONLY=0
-            echo "setup_dds: role=$_dds_role  server=${TIRT_PI_IP}:${TIRT_DDS_PORT:-11811}  profile=$_dds_profile"
+            _dds_srv="$TIRT_PI_IP"; [ "$_dds_role" = pc_eth ] && _dds_srv="${TIRT_PI_ETH_IP:-10.78.0.2}"
+            echo "setup_dds: role=$_dds_role  server=${_dds_srv}:${TIRT_DDS_PORT:-11811}  profile=$_dds_profile"
         fi
 
         # ros2 CLI 的 daemon 會沿用「它第一次啟動時」的 discovery 設定,所以在這個
@@ -76,5 +87,5 @@ else
     fi
 fi
 
-unset _dds_dir _dds_role _dds_profile
+unset _dds_dir _dds_role _dds_profile _dds_srv
 unset -f _dds_has_ip 2>/dev/null || true

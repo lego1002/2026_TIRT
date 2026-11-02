@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  筆電端,網路線直連版(筆電 hub 網卡 10.78.0.1 ↔ Pi eth0 10.78.0.2,見 net/70-tirt-eth.yaml)。
+  setup_dds.sh 在筆電持有 10.78.0.1 時優先選它(線比 WiFi 穩)。內容同 fastdds_pc.xml,只換位址。
+-->
+<dds xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+    <profiles>
+        <transport_descriptors>
+            <transport_descriptor>
+                <transport_id>tirt_transport</transport_id>
+                <type>UDPv4</type>
+                <interfaceWhiteList>
+                    <address>10.78.0.1</address>
+                    <address>127.0.0.1</address>
+                </interfaceWhiteList>
+            </transport_descriptor>
+        </transport_descriptors>
+        <participant profile_name="tirt_participant" is_default_profile="true">
+            <rtps>
+                <userTransports>
+                    <transport_id>tirt_transport</transport_id>
+                </userTransports>
+                <useBuiltinTransports>false</useBuiltinTransports>
+                <builtin>
+                    <discovery_config>
+                        <discoveryProtocol>SUPER_CLIENT</discoveryProtocol>
+                        <discoveryServersList>
+                            <RemoteServer prefix="44.53.00.5f.45.50.52.4f.53.49.4d.41">
+                                <metatrafficUnicastLocatorList>
+                                    <locator>
+                                        <udpv4>
+                                            <address>10.78.0.2</address>
+                                            <port>11811</port>
+                                        </udpv4>
+                                    </locator>
+                                </metatrafficUnicastLocatorList>
+                            </RemoteServer>
+                        </discoveryServersList>
+                    </discovery_config>
+                </builtin>
+            </rtps>
+        </participant>
+    </profiles>
+</dds>

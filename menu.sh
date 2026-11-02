@@ -172,6 +172,43 @@ do_rviz() {
     echo "※ RViz 也是 Pi 在算,會吃 CPU。正式比賽時不要開;這條 ssh 斷了它也會跟著關。"
 }
 
+laptop_text() {
+    if [ -f "$HOME/.tirt_laptop_rviz" ]; then printf '\e[36m開(Ubuntu 筆電可看)\e[0m'; else printf '關(只有 Pi 自己)'; fi
+}
+
+do_laptop() {
+    # 讓 Ubuntu 筆電直接跑 RViz(筆電的 CPU 畫圖,Pi 只送資料)。規則允許:筆電只看不算,
+    # 而且主辦方說過起點感應器前可以用 RViz 點目標(見 memory §12)。
+    # 切換要「全部重開」:每個 ROS 節點只在啟動當下讀一次 DDS 設定,新舊設定的節點互相看不到。
+    if [ -f "$HOME/.tirt_laptop_rviz" ]; then
+        echo "目前:筆電可看 RViz。要關掉(回到只有 Pi,比賽保底設定)嗎?"
+    else
+        echo "目前:只有 Pi。要打開「Ubuntu 筆電看 RViz」嗎?"
+        echo "(Pi 會多跑一個 Discovery Server;WiFi 斷了 Pi 上的建圖/導航照樣跑,只是筆電看不到)"
+    fi
+    if tmux has-session -t "$S" 2>/dev/null; then
+        echo "⚠ 切換會把正在跑的底盤 / 建圖 / 導航全部關掉,之後要重新選 1 或 4。"
+        echo "  (還沒存的地圖會不見 —— 要先存就選 n,回去選 3)"
+    fi
+    read -r -p "確定切換? [y/N] " a
+    case "$a" in y|Y) ;; *) echo "沒改。"; return ;; esac
+    tmux has-session -t "$S" 2>/dev/null && "$T" down >/dev/null
+    if [ -f "$HOME/.tirt_laptop_rviz" ]; then rm -f "$HOME/.tirt_laptop_rviz"; else touch "$HOME/.tirt_laptop_rviz"; fi
+    source "$REPO/dds/setup_dds.sh" >/dev/null
+    echo "已切換:筆電看 RViz = $(laptop_text)"
+    if [ -f "$HOME/.tirt_laptop_rviz" ]; then
+        echo
+        echo "接下來:先在這裡選 1(建圖)或 4(導航),然後在 Ubuntu 筆電的終端機打:"
+        echo "    cd ~/2026_TIRT && ./run_rviz.sh          # 建圖時"
+        echo "    cd ~/2026_TIRT && ./run_rviz.sh nav      # 導航時(有 Nav2 Goal 和定位狀態字)"
+        echo "筆電要跟 Pi 在同一個 WiFi(筆電要有 10.77.0.1),或用網路線(筆電 10.78.0.1)。"
+        echo "※ 用網路線的話,要「先插線、再選 1 或 4」—— 節點只在啟動時看有哪些網卡。"
+    fi
+    # OLED 服務也要換成同一套 DDS 設定,不然它看不到電池 / 光達。服務是用 lego 身分跑、
+    # Restart=always,所以不需要 sudo:對它 Ctrl-C(SIGINT,會畫收尾畫面),5 秒後 systemd 自己重開。
+    pkill -INT -u "$USER" -f '^/usr/bin/python3 /opt/ros/[^ ]*/bin/ros2 run ominibot_driver oled_status' 2>/dev/null || true
+}
+
 do_health() {
     echo "檢查中(約 8 秒)..."
     # 量測交給一個 python 節點一次做完(理由見 tools/health_check.py 檔頭)。
@@ -190,6 +227,51 @@ do_health() {
     printf '  CPU 負載     %s   (4 核,超過 4 代表忙不過來)\n' "$(cut -d' ' -f1-3 /proc/loadavg)"
 }
 
+radius_text() {
+    # 沒有 ~/.tirt_nav_radius = 用 config/nav2_params.yaml 的比賽值
+    local rr ir
+    if [ -f "$HOME/.tirt_nav_radius" ] && read -r rr ir < "$HOME/.tirt_nav_radius"; then
+        printf '\e[33m房間 %s/%s\e[0m' "$rr" "$ir"
+    else
+        printf '\e[32m比賽 0.09/0.18\e[0m'
+    fi
+}
+
+do_radius() {
+    # 安全圈 = robot_radius(車心離牆小於它就當撞到,決定窄處過不過得去)
+    #        + inflation_radius(牆邊「不想靠近」的帶子,只影響路線偏好,不擋路)。
+    # 存在 ~/.tirt_nav_radius,run_nav2.sh 開導航時套用;導航正開著就順便即時改。
+    echo "目前安全圈:$(radius_text)   (robot_radius / inflation_radius,單位公尺)"
+    echo "  1) 比賽  0.09 / 0.18   44 cm 迷宮走道用這個(碰牆就失敗,留足空間)"
+    echo "  2) 房間  0.07 / 0.12   家裡門縫、桌腳很窄時用(車身可能很貼牆)"
+    echo "  3) 自訂"
+    local c rr ir
+    read -r -p "選擇: " c
+    c="$(sed 's/[[:space:]]//g; y/０１２３/0123/' <<< "$c")"
+    case "$c" in
+        1) rr=0.09; ir=0.18; rm -f "$HOME/.tirt_nav_radius" ;;
+        2) rr=0.07; ir=0.12; echo "$rr $ir" > "$HOME/.tirt_nav_radius" ;;
+        3) read -r -p "robot_radius (建議 0.06~0.10): " rr
+           read -r -p "inflation_radius (要比 robot_radius 大,建議 0.10~0.20): " ir
+           if ! [[ "$rr" =~ ^0\.[0-9]+$ && "$ir" =~ ^0\.[0-9]+$ ]] \
+              || ! python3 -c "import sys; r,i=map(float,sys.argv[1:]); sys.exit(not (0.04<=r<=0.15 and r<i<=0.4))" "$rr" "$ir"; then
+               echo "數字不合理(robot_radius 0.04~0.15,inflation_radius 要比它大、最多 0.4)。沒改。"; return
+           fi
+           echo "$rr $ir" > "$HOME/.tirt_nav_radius" ;;
+        *) echo "沒改。"; return ;;
+    esac
+    echo "已設定 $(radius_text),下次開導航(選 4)會套用。"
+    if busy nav; then
+        echo "導航正在跑,即時套用中(Pi 忙的時候每項要等幾秒到幾十秒)..."
+        local cm ok=1
+        for cm in global_costmap/global_costmap local_costmap/local_costmap; do
+            timeout 60 ros2 param set "/$cm" robot_radius "$rr" >/dev/null || ok=0
+            timeout 60 ros2 param set "/$cm" inflation_layer.inflation_radius "$ir" >/dev/null || ok=0
+        done
+        if (( ok )); then echo "已即時套用。"; else echo "即時套用有一項沒成功;重開導航(選 4)就會生效。"; fi
+    fi
+}
+
 do_log() {
     local w
     read -r -p "看哪一段? [bringup / slam / nav / rviz,Enter = bringup]: " w
@@ -202,6 +284,7 @@ while true; do
     echo "================ TIRT 機器人控制台(全部在 Pi 上跑)================"
     printf '  底盤+光達 %b   建圖 %b   導航 %b   RViz %b   供電 %b\n' \
         "$(mark bringup)" "$(mark slam)" "$(mark nav)" "$(mark rviz)" "$(power_text)"
+    printf '  安全圈 %b   筆電 RViz %b\n' "$(radius_text)" "$(laptop_text)"
     echo "-------------------------------------------------------------------"
     echo "  1) 開始建圖            (底盤 + 光達 + SLAM)"
     echo "  2) 鍵盤遙控            (Ctrl-C 回選單)"
@@ -212,11 +295,13 @@ while true; do
     echo "  7) 看某一段的輸出      (出問題時看錯誤訊息)"
     echo "  8) 進入 tmux(進階)    (Ctrl-a d 回來)"
     echo "  9) 原地定位            (導航中,2D Pose Estimate 之後用)"
+    echo "  r) 調整安全圈          (比賽 / 房間 / 自訂)"
+    echo "  l) 筆電看 RViz 開/關   (Ubuntu 筆電自己畫 RViz,Pi 省 CPU)"
     echo "  0) 全部關掉"
     echo "  q) 離開選單            (背景程式繼續跑)"
     read -r -p "選擇: " c || exit 0
     # 中文輸入法開著時打出來的是全形「９」,會落到「沒有這個選項」;順便去掉空白。
-    c="$(sed 's/[[:space:]]//g; y/０１２３４５６７８９ｑＱ/0123456789qQ/' <<< "$c")"
+    c="$(sed 's/[[:space:]]//g; y/０１２３４５６７８９ｑＱｒＲｌＬ/0123456789qQrRlL/' <<< "$c")"
     echo
     case "$c" in
         1) do_mapping ;;
@@ -229,6 +314,8 @@ while true; do
         8) "$T" attach; continue ;;
         9) if busy nav; then python3 "$REPO/tools/amcl_settle.py"; else echo "導航沒開。先選 4。"; fi ;;
         0) "$T" down; echo "全部關掉了(光達馬達也停了)。" ;;
+        r|R) do_radius ;;
+        l|L) do_laptop ;;
         q|Q) echo "選單已離開。再打 ./menu.sh 就回來。"; exit 0 ;;
         *) echo "沒有這個選項。"; continue ;;
     esac

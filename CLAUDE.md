@@ -679,11 +679,30 @@ running in the `tirt` tmux session.
   Pi it doesn't finish SIGINT teardown in 5 s and was left orphaned at load 5.5 publishing `map->odom` next to
   the new slam. That pkill pattern is anchored `^/opt/ros/[^ ]*/component_container_isolated` because the
   unanchored one matched (and killed) a shell whose command line merely contained it.
+- **Laptop RViz** (menu `l`, 2026-11-02): flag `~/.tirt_laptop_rviz` (with `~/.tirt_solo`) makes
+  `setup_dds.sh` pick role `solo_net` → `dds/fastdds_solo_net.xml`: all nodes still on the Pi, but as
+  SUPER_CLIENTs of a Discovery Server reached at **127.0.0.1**:11811 (so the Pi's own graph survives losing
+  WiFi), `ROS_LOCALHOST_ONLY=0`, whitelist lo + 10.77.0.2 + 10.78.0.2, and `robot_tmux.sh` adds the `dds`
+  window. Laptop runs `./run_rviz.sh` / `./run_rviz.sh nav` with `fastdds_pc.xml` (WiFi alias) or
+  `fastdds_pc_eth.xml` (cable, picked when it holds 10.78.0.1). Toggling restarts the whole stack (DDS config
+  is read once per process) and SIGINTs the OLED node so `Restart=always` brings it back on the new profile.
+  Fast DDS only binds interfaces present at node start: **plug the cable before bringup**. Flag off =
+  original localhost-only solo, the race-safe fallback.
 - Slam is started ~5 s **after** bringup, because `run_robot.sh` pkills any `async_slam_toolbox_node` on start.
 - Menu health check uses `tools/health_check.py` (one rclpy node counts `/scan`, `/odom`, reads
   `/battery_voltage`); backgrounded `ros2 topic hz` + `timeout -s INT` reported a healthy 20 Hz `/odom` as
   "no data". Its power line decodes `get_throttled` bits — `0x80000` is **over-temperature**, not
   under-voltage (the Pi hit 81 °C with nav2+RViz+Claude Code; it needs a heatsink/fan).
+- **Safety radius is a menu setting** (`r`, 2026-11-01): `~/.tirt_nav_radius` holds `"robot_radius inflation_radius"`;
+  when present `run_nav2.sh` writes a temp params copy with both costmaps overridden (config/nav2_params.yaml
+  keeps the **competition** 0.09/0.18), and the menu also applies it live via `ros2 param set` if nav is up
+  (slow on a loaded Pi — one set hung >60 s with RViz open). Room preset 0.07/0.12 exists because home
+  doorways mapped at 15-18 cm: on `room_1101` the start room was sealed at 0.09 and opened below 0.075.
+  **Switch back to 比賽 before the race** — the menu header shows which is active.
+- `loc_status` (ominibot_driver, started by `nav2_pc.launch.py`) turns `/amcl_pose` covariance into a
+  `/loc_status` text Marker above the robot in `view_nav2.rviz`: READY (σ≤5 cm & ≤5°) / ALMOST / NOT
+  LOCALIZED — same thresholds as menu option 9 (`tools/amcl_settle.py`), which is what to run when it stays red.
+  English on purpose: RViz's font has no CJK glyphs.
 - Keyboard teleop is allowed in navigation mode: Nav2 publishes **no** `/cmd_vel` while idle (0 msgs / 6 s).
   Only teleop *plus* an active Nav2 goal fights.
 - Nav2 on the Pi: `controller_frequency` 10, DWB 8×6×10 samples, local costmap 5 Hz (was 20 / 1440 / 10 —

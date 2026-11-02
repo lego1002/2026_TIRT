@@ -8,7 +8,7 @@
 set -e
 _here="$( cd "$( dirname "${BASH_SOURCE[0]:-$0}" )" && pwd )"
 
-source /opt/ros/humble/setup.bash
+for _d in humble jazzy; do [ -f "/opt/ros/$_d/setup.bash" ] && { source "/opt/ros/$_d/setup.bash"; break; }; done
 if [ -f "$HOME/ros2_ws/install/setup.bash" ]; then source "$HOME/ros2_ws/install/setup.bash"; fi
 
 # DDS 角色由本機的固定別名 IP 自動判斷,不再需要 DDS_SERVER=<pi_ip>。
@@ -18,4 +18,8 @@ if [ -z "${FASTRTPS_DEFAULT_PROFILES_FILE:-}" ]; then
     exit 1
 fi
 
-exec rviz2 -d "$_here/car_assemble_description/rviz/view_robot.rviz"
+# ./run_rviz.sh nav → 導航用的畫面(Nav2 Goal、costmap、粒子、車頂定位狀態字)。
+# 單機模式下 Pi 開了 menu.sh 的「l) 筆電看 RViz」後,筆電就是用這支看。
+_cfg=view_robot.rviz
+case "${1:-}" in nav|--nav) _cfg=view_nav2.rviz ;; esac
+exec rviz2 -d "$_here/car_assemble_description/rviz/$_cfg"

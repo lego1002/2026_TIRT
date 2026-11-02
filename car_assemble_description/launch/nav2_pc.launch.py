@@ -139,6 +139,15 @@ def generate_launch_description():
             }.items(),
         ),
 
+        # RViz 裡車子上方的「READY / NOT LOCALIZED」字(看 /amcl_pose 的 covariance),
+        # 免得要用眼睛判斷粒子雲夠不夠小。見 ominibot_driver/loc_status_node.py。
+        Node(
+            package='ominibot_driver',
+            executable='loc_status',
+            name='loc_status',
+            output='screen',
+        ),
+
         # RViz。關掉視窗不會把 nav2 一起關掉(沒設 on_exit),要再開就跑 ./run_rviz.sh
         # ——不過那支載的是 SLAM 用的 view_robot.rviz(沒有 Nav2 面板);要完整的導航
         # 介面就 rviz2 -d car_assemble_description/rviz/view_nav2.rviz。

@@ -31,7 +31,11 @@ ARGS_FILE="$HOME/.tirt_robot_args"
 # 這時不需要 discovery server 也不需要 10.77.0.2 別名;teleop 改由 menu.sh 在前景跑
 # (ssh 斷了 teleop 就跟著停,driver watchdog 會讓車停下 —— 這是想要的行為)。
 SOLO=0; [ -f "$HOME/.tirt_solo" ] && SOLO=1
-if [ "$SOLO" = 1 ]; then
+if [ "$SOLO" = 1 ] && [ -f "$HOME/.tirt_laptop_rviz" ]; then
+    # 單機 + 筆電看 RViz(menu.sh 選項 l):Pi 節點改走 Discovery Server(127.0.0.1),
+    # 所以 dds 視窗要先起來。沒有別名也照跑 —— 只是筆電看不到而已。
+    WINDOWS=(dds bringup shell)
+elif [ "$SOLO" = 1 ]; then
     WINDOWS=(bringup shell)
 else
     WINDOWS=(dds bringup teleop shell)

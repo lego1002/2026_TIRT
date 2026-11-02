@@ -213,6 +213,36 @@ if [[ " $* " != *" params_file:="* ]]; then
     fi
 fi
 
+# ---- 安全圈覆寫(menu.sh 的 r 選項寫 ~/.tirt_nav_radius:"robot_radius inflation_radius")----
+# 比賽迷宮 44 cm 走道用 config 裡的 0.09 / 0.18;家裡房間的門縫、桌腳間距常常只有 15~20 cm,
+# 0.09 會把出口整個封死(2026-11-01 room_1101:起點房間 0.09 走不出去,0.075 以下才通)。
+# 跟上面的相容層一樣,產生暫存檔而不是改 yaml —— config/nav2_params.yaml 維持比賽值。
+_radius_file="$HOME/.tirt_nav_radius"
+if [ -f "$_radius_file" ]; then
+    read -r _rr _ir < "$_radius_file" || true
+    _base="$(sed -n 's/.*params_file:=\(.*\)/\1/p' <<< "$(printf '%s\n' "$@")" | tail -1)"
+    [ -z "$_base" ] && _base="$(ros2 pkg prefix car_assemble_description 2>/dev/null)/share/car_assemble_description/config/nav2_params.yaml"
+    _out="${XDG_RUNTIME_DIR:-/tmp}/tirt_nav2_params_radius.yaml"
+    if python3 - "$_base" "$_out" "$_rr" "$_ir" <<'PY'
+import sys, yaml
+src, out, rr, ir = sys.argv[1], sys.argv[2], float(sys.argv[3]), float(sys.argv[4])
+d = yaml.safe_load(open(src))
+for cm in ('local_costmap', 'global_costmap'):
+    p = d[cm][cm]['ros__parameters']
+    p['robot_radius'] = rr
+    p['inflation_layer']['inflation_radius'] = ir
+yaml.safe_dump(d, open(out, 'w'), sort_keys=False)
+PY
+    then
+        echo "run_nav2: 安全圈覆寫 robot_radius=$_rr inflation_radius=$_ir(來自 $_radius_file)"
+        _args=()
+        for _a in "$@"; do [[ "$_a" == params_file:=* ]] || _args+=("$_a"); done
+        set -- "${_args[@]}" "params_file:=$_out"
+    else
+        echo "run_nav2: 安全圈覆寫失敗,照原本參數跑。" >&2
+    fi
+fi
+
 echo "run_nav2: 使用地圖 $map_file"
 echo "run_nav2: RViz 開起來以後 → 車子位置不對就用 '2D Pose Estimate' 校正,"
 echo "          然後用 'Nav2 Goal' 在地圖上點目標點並拖出朝向。"

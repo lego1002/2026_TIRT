@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  單機 + 筆電看 RViz(solo_net)—— 所有節點照樣跑在 Pi 上,只是讓 Ubuntu 筆電可以加入「看」。
+
+  選用條件:~/.tirt_solo 和 ~/.tirt_laptop_rviz 都存在(./menu.sh 選項 l 切換)。
+  沒有 ~/.tirt_laptop_rviz 時用的是 fastdds_solo.xml(只走 127.0.0.1),這是比賽保底。
+
+  和 fastdds_pi.xml(舊雙機模式)的差別只有兩點:
+  1. Pi 自己的節點連 Discovery Server 走 127.0.0.1,不是 10.77.0.2 —— 所以 WiFi 別名掉了
+     Pi 上的建圖/導航照樣互相看得到,只有筆電看不到而已。
+  2. 白名單多了 10.78.0.2(網路線直連,net/70-tirt-eth.yaml)。注意 Fast DDS 只在節點
+     「啟動當下」看有哪些網卡:要用網路線看 RViz,先插線再開底盤/導航。
+  Discovery Server 本身(dds/run_discovery_server.sh)監聽 0.0.0.0:11811,三個位址都收。
+  為什麼要 Discovery Server 而不是預設 multicast:場地 WiFi AP 不轉送 multicast,見 fastdds_pi.xml。
+-->
+<dds xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+    <profiles>
+        <transport_descriptors>
+            <transport_descriptor>
+                <transport_id>tirt_transport</transport_id>
+                <type>UDPv4</type>
+                <interfaceWhiteList>
+                    <address>127.0.0.1</address>
+                    <address>10.77.0.2</address>
+                    <address>10.78.0.2</address>
+                </interfaceWhiteList>
+            </transport_descriptor>
+        </transport_descriptors>
+        <participant profile_name="tirt_participant" is_default_profile="true">
+            <rtps>
+                <userTransports>
+                    <transport_id>tirt_transport</transport_id>
+                </userTransports>
+                <useBuiltinTransports>false</useBuiltinTransports>
+                <builtin>
+                    <discovery_config>
+                        <discoveryProtocol>SUPER_CLIENT</discoveryProtocol>
+                        <discoveryServersList>
+                            <RemoteServer prefix="44.53.00.5f.45.50.52.4f.53.49.4d.41">
+                                <metatrafficUnicastLocatorList>
+                                    <locator>
+                                        <udpv4>
+                                            <address>127.0.0.1</address>
+                                            <port>11811</port>
+                                        </udpv4>
+                                    </locator>
+                                </metatrafficUnicastLocatorList>
+                            </RemoteServer>
+                        </discoveryServersList>
+                    </discovery_config>
+                </builtin>
+            </rtps>
+        </participant>
+    </profiles>
+</dds>
