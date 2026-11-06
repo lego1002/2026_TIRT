@@ -420,7 +420,7 @@ human-editable text.
   default Orbit view is how a ~167° `laser_yaw` error went unnoticed for a long time. Loads
   `car_assemble_description/rviz/orientation_check.rviz`.
 - `maps/` — saved SLAM maps (`.pgm` + `.yaml` pairs) produced by `save_map.sh`, and consumed by
-  `run_nav2.sh` / Nav2's `map_server`. `201_self_test` (2026-07-28) is 168×104 cells @ 0.05 m = 8.4 × 5.2 m.
+  `run_nav2.sh` / Nav2's `map_server`. Emptied on 2026-11-06 (`.gitkeep` holds the folder; old maps are in git history), so build a new map first: `201_self_test`, the default of a bare `./run_nav2.sh` / `./gcs.sh --nav`, no longer exists.
   **`/maps` used to be gitignored** (commit `601b05a`, 2026-07-28, now tracks it — only the sim's generated
   `maps/sim_*` stay ignored, since `gcs_sim.sh` regenerates them). Before that change maps did not sync
   between the two machines and the two directories genuinely held different files, which is what the
