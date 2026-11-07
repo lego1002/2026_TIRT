@@ -236,7 +236,7 @@ nav.goToPose(pose)          # 然後 while not nav.isTaskComplete(): ...
 | `alpha1..alpha5` | 0.3 / 0.3 / 0.3 / 0.3 / 0.2 | odom 雜訊模型。粒子雲太緊、修不動 → 調大；抖動亂飄 → 調小 |
 | `update_min_d` / `update_min_a` | **0.05 / 0.05** | 走多遠 / 轉多少才做一次濾波更新。**沒達到門檻時 AMCL 完全不修正**，所以兩次更新之間的誤差會累積到接近門檻值 |
 | `max_beams` | 120 | 每次匹配用幾條光束。房間小、牆多所以給得比原版 60 多 |
-| `transform_tolerance` | 1.0 | 跨 WiFi 的 TF 容忍，**不要降**（見 `0721_net_issue_plan.md`） |
+| `transform_tolerance` | 1.0 | 跨 WiFi 的 TF 容忍，**不要降**（見 `notes/0721_net_issue_plan.md`） |
 | `set_initial_pose` / `initial_pose` | true / (0,0,0) | 只有「車放回建圖起跑點」時才正確；放別處要在 RViz 點 2D Pose Estimate |
 | `robot_model_type` | `nav2_amcl::OmniMotionModel` | **不要改回 Differential**，那會把橫移當成不可能的運動 |
 

@@ -41,7 +41,7 @@ robotctl: ping 不到 Pi 的固定別名 $TIRT_PI_IP。
      沒有的話:sudo ./net/install_pc_alias.sh
   3. Pi 那邊有沒有掛上 $TIRT_PI_IP?
      沒有的話(要先能用其他方式連進去):sudo ./net/install_pi_network.sh
-  4. 都有卻還是不通 → AP 可能開了 client isolation,換自己的熱點(見 networkplan.md)。
+  4. 都有卻還是不通 → AP 可能開了 client isolation,換自己的熱點(見 notes/networkplan.md)。
 EOF
         exit 1
     fi

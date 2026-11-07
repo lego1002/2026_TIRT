@@ -8,7 +8,7 @@
 for the car_assemble robot</p>
   </description>
   <author>TODO</author>
-  <maintainer email="TODO@email.com">TODO</maintainer>
+  <maintainer email="lego@anvil.bot">Lego_rpi_4g</maintainer>
   <license>BSD</license>
   <buildtool_depend>ament_cmake</buildtool_depend>
   <exec_depend>robot_state_publisher</exec_depend>

@@ -84,7 +84,7 @@ amcl:
     # === TF ===
     tf_broadcast: true
     # 1.0s(原版 1.0,這裡是刻意保留):/scan 和 odom TF 都要跨 WiFi 過來,實測突發
-    # 停頓可達 0.47s(見 0721_net_issue_plan.md),容忍度不能設小。
+    # 停頓可達 0.47s(見 notes/0721_net_issue_plan.md),容忍度不能設小。
     transform_tolerance: 1.0
 
     # === 初始位置 ===

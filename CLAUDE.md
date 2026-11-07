@@ -270,7 +270,10 @@ human-editable text.
     scale linear speed, `q`/`e` scale turn speed (split into two key pairs on 2026-07-14 — they were coupled
     and turn speed "couldn't change"), `k`/space stop. Pad and turn keys are mutually exclusive (pressing one zeroes the other
     axis). It re-publishes the current `Twist` every loop (≥10 Hz) to keep the driver's `cmd_vel` watchdog
-    fed. Run with `ros2 run ominibot_driver mecanum_teleop`.
+    fed. Run with `ros2 run ominibot_driver mecanum_teleop`. Since 2026-11-07 it ramps its output
+    (`linear_accel`/`linear_decel` 0.6/1.0 m/s², `angular_accel`/`angular_decel` 2.0/3.0 rad/s²; Ctrl-C still
+    zeros at once): a key press used to ask for 0→0.2 m/s inside one 50 ms message, the suspected trigger for
+    wheel slip that `/odom` cannot see. Not yet confirmed by a mapping run.
   - `ominibot_driver/oled_status_node.py` (`oled_status` console script) — drives the **SPI OLED bolted to
     the robot** as an on-board status readout (added 2026-08-30). Subscribes `/battery_voltage`, `/odom` and
     `/scan`; draws the alias IP, pack voltage + a charge bar, body velocity, and the *arrival* rates of scan
@@ -347,7 +350,7 @@ human-editable text.
     requires editing nothing. It also avoids mDNS, which would be the obvious alternative but travels by
     multicast — exactly what the venue AP was proven to block (see the Discovery Server note below). The one
     prerequisite is that the AP forwards *unicast* between clients; if it has full client isolation nothing
-    works anyway, which is what the self-hosted-hotspot plan in `networkplan.md` is for.
+    works anyway, which is what the self-hosted-hotspot plan in `notes/networkplan.md` is for.
   - `net/60-tirt-wifi.yaml.example` → copy to `net/60-tirt-wifi.yaml`, fill in SSIDs/passwords, install with
     `sudo ./net/install_pi_network.sh`. Lists **all** venues' `access-points` at once (phone hotspot, RMML_2G,
     …) so wpa_supplicant auto-joins whichever is present, plus `addresses: [10.77.0.2/24]` alongside
@@ -572,11 +575,12 @@ human-editable text.
   flood-fill) belong **above** Nav2 as a `NavigateToPose` client and why, given that the rules let you map
   the field first, they are unnecessary here — a global planner on a known map already yields the optimal
   path. Same conclusion as `notes/nav2_tuning.md`.
+- `race_logs/2026-11-07/` — archived race day (added 2026-11-07): operator commands, ROS logs, the params actually loaded, the `rzce` map, an analysis `README.md` and `比賽現場解題手冊.md`. The repo is **public**, so MACs, LAN/Tailscale IPs and the lidar serial are masked; check the same way before adding another archive. The root `README.md` is the human entry point and `notes/README.md` indexes the notes. `.github/workflows/checks.yml` compiles Python and checks shell syntax, YAML, the URDF and `tools/selftest_analyze.py` (no LFS needed).
 - `docs/` — reference documents: the competition rulebook PDF (`2026TIRT-迷宮機器人挑戰賽.pdf`), the OminiBotHV
   serial-protocol/kinematics spec PDF (a copy of the one in `OminiBotHV-master/communication/`), and field-test
   screenshots. As of the 2026-07-25 "reorganize the structure" commit, all the Chinese design/field-test notes
   moved from the repo root into `notes/` (`SLAM_learning_note.md`, `command_note.md`, `urdf閱讀方法.md`,
-  `雙機RViz連線.md`); `networkplan.md` and `0721_net_issue_plan.md` stayed at the root.
+  `雙機RViz連線.md`); `networkplan.md` and `0721_net_issue_plan.md` joined them on 2026-11-07.
 - `build/`, `install/`, `log/` — **gone, and must stay gone.** These were colcon output accidentally committed
   in the 2026-07-25 reorg; `be73e1f` untracked them, `.gitignore` covers `/build` `/install` `/log`, and the
   leftover local copies were deleted on 2026-07-25. **Never `colcon build` from the repo root.** That in-tree
@@ -608,18 +612,18 @@ human-editable text.
   (`nav2_simple_commander`), not as a planner plugin.
 - `notes/command_note.md` — quick crib sheet (Chinese) of the start-to-finish SLAM session commands; overlaps the
   runbook, kept as the operator's cheat sheet.
-- `networkplan.md` — in-progress notes (Chinese) on bringing self-hosted Wi-Fi (phone or laptop hotspot) to
+- `notes/networkplan.md` — in-progress notes (Chinese) on bringing self-hosted Wi-Fi (phone or laptop hotspot) to
   the competition venue instead of relying on venue Wi-Fi, so the Pi/PC DDS link stays on a network the team
   controls; covers why venue Wi-Fi is risky for DDS (congestion, AP client isolation, blocked multicast,
   captive portals) and phone-hotspot vs. laptop-hotspot tradeoffs. Not yet finalized into netplan config.
-- `0721_net_issue_plan.md` — the field-test debrief (Chinese) that closed out the `slam_toolbox` "queue is
+- `notes/0721_net_issue_plan.md` — the field-test debrief (Chinese) that closed out the `slam_toolbox` "queue is
   full" symptom: source-side telemetry (`/scan` 10 Hz, `/odom` 20 Hz, `/tf` ~60 Hz, full TF chain, correct
   DDS whitelist) is all clean, so the dropped scans are **WiFi transport jitter**, not a ROS config or
   source-data fault — a WiFi stall delays the `odom->base_link` TF so SLAM's message filter queues the scan
   until the queue overflows (`transform_timeout:=1.0` only masks it). Also records that the Pi's `wlan0` is
   managed by **netplan → systemd-networkd** (NetworkManager shows it `unmanaged`), so the venue-hotspot fix
-  from `networkplan.md` must be written as multiple `access-points` with `priority` under `wlan0` in netplan,
-  **not** via `nmcli`. Read this (with `networkplan.md`) before touching Pi networking or re-diagnosing
+  from `notes/networkplan.md` must be written as multiple `access-points` with `priority` under `wlan0` in netplan,
+  **not** via `nmcli`. Read this (with `notes/networkplan.md`) before touching Pi networking or re-diagnosing
   dropped scans.
 - `notes/urdf閱讀方法.md` — running notes (in Chinese) on how to validate/view the URDF and known open issues; check
   this file for the current TODO list before doing further URDF work (e.g. missing wheel `<limit>` tags, and

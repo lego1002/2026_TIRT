@@ -17,7 +17,7 @@
   * 尺寸和格數完全不動        → slam_toolbox 沒有加入新節點。往這三個方向查:
       1. slam_toolbox 那個終端有沒有狂噴 "Message Filter dropping message" /
          "queue is full" → scan 根本沒進去(WiFi 抖動害 TF 等不到,見
-         0721_net_issue_plan.md)。
+         notes/0721_net_issue_plan.md)。
       2. odom 有沒有在動:另開 tools/odom_check.py,確認車動時 `路徑長` 有在增加。
          slam_toolbox 是看 odom 位移超過 minimum_travel_distance(0.2m)/
          minimum_travel_heading(0.17rad) 才收新的一幀。

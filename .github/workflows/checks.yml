@@ -1,0 +1,49 @@
+name: checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-22.04
+    container: ros:humble
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: false
+
+      - name: Install tools
+        run: |
+          apt-get update
+          apt-get install -y liburdfdom-tools python3-numpy python3-yaml
+
+      - name: Compile Python
+        run: python3 -m compileall -q ominibot_driver sim tools car_assemble_description/launch
+
+      - name: Check shell syntax
+        run: |
+          for script in *.sh robotctl dds/*.sh pi/*.sh net/*.sh sim/*.sh; do
+            bash -n "$script"
+          done
+
+      - name: Parse YAML
+        run: |
+          python3 - <<'PY'
+          import glob
+          import yaml
+
+          for path in glob.glob('config/*.yaml') + glob.glob('sim/worlds/*.yaml'):
+              with open(path, encoding='utf-8') as handle:
+                  yaml.safe_load(handle)
+              print('ok', path)
+          PY
+
+      - name: Check URDF
+        run: check_urdf car_assemble_description/urdf/CAR_ASSEMBLE_URDF.urdf
+
+      - name: Run analysis self-test
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          python3 tools/selftest_analyze.py
