@@ -10,7 +10,7 @@
     OminiBotHV-master/example/OminiBot_HV_Meca.py.
   </description>
   <maintainer email="lego@anvil.bot">Lego_rpi_4g</maintainer>
-  <license>BSD</license>
+  <license>BSD-3-Clause</license>
 
   <exec_depend>rclpy</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>

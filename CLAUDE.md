@@ -576,6 +576,7 @@ human-editable text.
   the field first, they are unnecessary here — a global planner on a known map already yields the optimal
   path. Same conclusion as `notes/nav2_tuning.md`.
 - `race_logs/2026-11-07/` — archived race day (added 2026-11-07): operator commands, ROS logs, the params actually loaded, the `rzce` map, an analysis `README.md` and `比賽現場解題手冊.md`. The repo is **public**, so MACs, LAN/Tailscale IPs and the lidar serial are masked; check the same way before adding another archive. The root `README.md` is the human entry point and `notes/README.md` indexes the notes. `.github/workflows/checks.yml` compiles Python and checks shell syntax, YAML, the URDF and `tools/selftest_analyze.py` (no LFS needed).
+- `LICENSE` (BSD-3-Clause) covers the project's own work; `THIRD_PARTY_NOTICES.md` lists what it does not cover. Vendor code in `OminiBotHV-master/` has no stated license, and `ominibot_hv.py` is partly derived from it.
 - `docs/` — reference documents: the competition rulebook PDF (`2026TIRT-迷宮機器人挑戰賽.pdf`), the OminiBotHV
   serial-protocol/kinematics spec PDF (a copy of the one in `OminiBotHV-master/communication/`), and field-test
   screenshots. As of the 2026-07-25 "reorganize the structure" commit, all the Chinese design/field-test notes

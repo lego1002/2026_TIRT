@@ -148,4 +148,4 @@ cd ~/2026_TIRT && ./menu.sh
 
 ## 授權
 
-三個 ROS 2 套件的 `package.xml` 標示為 BSD，repo 目前還沒有整體的 `LICENSE` 檔。`OminiBotHV-master/`、比賽規則 PDF 和 `CAD_files/` 裡的第三方零件屬於各自的權利人。
+本專案自己撰寫的內容採用 [BSD-3-Clause](LICENSE) 授權。廠商檔案、比賽規則和第三方 CAD 零件等不在此範圍內，詳見 [第三方內容說明](THIRD_PARTY_NOTICES.md)。

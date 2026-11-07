@@ -6,7 +6,7 @@
   <description>2026 TIRT 迷宮機器人:2D 假物理模擬環境。發出和真車完全一致的 /scan、/odom、TF,
   讓 slam_toolbox / Nav2 / teleop 原封不動地跑,用於在沒有硬體的情況下學習與除錯整套系統。</description>
   <maintainer email="gdteyuj123@gmail.com">lego</maintainer>
-  <license>BSD</license>
+  <license>BSD-3-Clause</license>
 
   <exec_depend>rclpy</exec_depend>
   <exec_depend>nav_msgs</exec_depend>

@@ -20,7 +20,7 @@ setup(
     maintainer='Lego_rpi_4g',
     maintainer_email='lego@anvil.bot',
     description='ROS 2 driver for the OminiBotHV mecanum controller board.',
-    license='BSD',
+    license='BSD-3-Clause',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [

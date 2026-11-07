@@ -20,7 +20,7 @@ setup(
     maintainer='lego',
     maintainer_email='gdteyuj123@gmail.com',
     description='2026 TIRT 迷宮機器人 2D 假物理模擬環境',
-    license='BSD',
+    license='BSD-3-Clause',
     entry_points={
         'console_scripts': [
             'fake_base = tirt_sim.fake_base_node:main',
