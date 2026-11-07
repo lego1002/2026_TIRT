@@ -1,0 +1,120 @@
+10:40:32.660 INFO robot_state_publisher-1 process started with pid [1623]
+10:40:32.661 INFO joint_state_publisher-2 process started with pid [1625]
+10:40:32.661 INFO sllidar_node-3 process started with pid [1627]
+10:40:32.662 INFO static_transform_publisher-4 process started with pid [1629]
+10:40:32.663 INFO ominibot_driver_node-5 process started with pid [1631]
+10:40:38.519 INFO ominibot_driver gyro zero offset = +0.007075 rad/s (+24.3 deg/min of heading drift removed; 40 samples)
+10:40:38.726 INFO async_slam_toolbox_node-1 process started with pid [1768]
+10:40:58.570 INFO mecanum_teleop linear speed: 0.22 m/s
+10:40:59.410 INFO mecanum_teleop linear speed: 0.20 m/s
+10:42:09.049 INFO mecanum_teleop linear speed: 0.18 m/s
+10:42:17.260 INFO mecanum_teleop linear speed: 0.16 m/s
+10:43:01.919 INFO mecanum_teleop linear speed: 0.18 m/s
+10:43:02.078 INFO mecanum_teleop linear speed: 0.19 m/s
+10:43:02.485 INFO mecanum_teleop linear speed: 0.21 m/s
+10:44:46.841 INFO rclcpp signal_handler(SIGINT/SIGTERM)
+10:44:46.841 WARN launch user interrupted with ctrl-c (SIGINT)
+10:44:47.039 INFO sllidar_node Stop motor
+10:44:47.073 INFO rclcpp signal_handler(SIGINT/SIGTERM)
+10:44:47.076 WARN launch user interrupted with ctrl-c (SIGINT)
+10:45:19.819 INFO robot_state_publisher-1 process started with pid [2637]
+10:45:19.820 INFO joint_state_publisher-2 process started with pid [2639]
+10:45:19.821 INFO sllidar_node-3 process started with pid [2641]
+10:45:19.822 INFO static_transform_publisher-4 process started with pid [2643]
+10:45:19.823 INFO ominibot_driver_node-5 process started with pid [2647]
+10:45:25.322 INFO ominibot_driver gyro zero offset = +0.007400 rad/s (+25.4 deg/min of heading drift removed; 40 samples)
+10:45:25.779 INFO async_slam_toolbox_node-1 process started with pid [2750]
+10:45:27.155 INFO slam_toolbox Message Filter dropping message: frame 'laser_frame' at time 1794019526.958 for reason 'discarding message because the queue is fu
+10:47:52.386 INFO rclcpp signal_handler(SIGINT/SIGTERM)
+10:47:52.387 WARN launch user interrupted with ctrl-c (SIGINT)
+10:47:52.523 INFO sllidar_node Stop motor
+10:47:52.605 INFO rclcpp signal_handler(SIGINT/SIGTERM)
+10:47:52.605 WARN launch user interrupted with ctrl-c (SIGINT)
+10:49:01.786 INFO robot_state_publisher-1 process started with pid [3979]
+10:49:01.787 INFO joint_state_publisher-2 process started with pid [3981]
+10:49:01.789 INFO sllidar_node-3 process started with pid [3983]
+10:49:01.790 INFO static_transform_publisher-4 process started with pid [3985]
+10:49:01.791 INFO ominibot_driver_node-5 process started with pid [3987]
+10:49:08.195 INFO async_slam_toolbox_node-1 process started with pid [4080]
+10:49:08.218 INFO ominibot_driver gyro zero offset = +0.007700 rad/s (+26.5 deg/min of heading drift removed; 40 samples)
+10:49:09.631 INFO slam_toolbox Message Filter dropping message: frame 'laser_frame' at time 1794019749.434 for reason 'discarding message because the queue is fu
+10:49:39.702 INFO mecanum_teleop turn speed: 0.72 rad/s
+10:49:40.550 INFO mecanum_teleop turn speed: 0.65 rad/s
+10:49:41.098 INFO mecanum_teleop turn speed: 0.58 rad/s
+10:53:21.025 INFO map_io Map saved
+10:53:21.025 INFO map_saver Map saved successfully
+10:53:28.668 WARN launch user interrupted with ctrl-c (SIGINT)
+10:53:28.668 INFO rclcpp signal_handler(SIGINT/SIGTERM)
+10:53:28.788 INFO sllidar_node Stop motor
+10:53:28.806 INFO rclcpp signal_handler(SIGINT/SIGTERM)
+10:53:28.807 WARN launch user interrupted with ctrl-c (SIGINT)
+10:54:13.883 INFO robot_state_publisher-1 process started with pid [5207]
+10:54:13.884 INFO joint_state_publisher-2 process started with pid [5209]
+10:54:13.885 INFO sllidar_node-3 process started with pid [5211]
+10:54:13.887 INFO static_transform_publisher-4 process started with pid [5213]
+10:54:13.888 INFO ominibot_driver_node-5 process started with pid [5217]
+10:54:19.855 INFO ominibot_driver gyro zero offset = +0.008000 rad/s (+27.5 deg/min of heading drift removed; 40 samples)
+10:54:20.758 INFO component_container_isolated-1 process started with pid [5361]
+10:54:20.759 INFO loc_status-2 process started with pid [5363]
+10:54:22.387 WARN ominibot_driver serial link degraded: 10/118 bad frames (8.5%) in 5s [bcc=0 desync=10 short=0 timeout=0] | uart overrun=0 buf_overrun=0 frame=0 --
+10:54:24.291 INFO amcl initialPoseReceived
+10:55:11.203 INFO waypoint_follower Received follow waypoint request with 2 waypoints.
+10:55:11.206 INFO bt_navigator Begin navigating from current location (0.00, 0.00) to (3.05, -1.95)
+10:55:32.105 INFO waypoint_follower [follow_waypoints] [ActionServer] Client requested to cancel the goal. Cancelling.
+10:55:32.132 INFO bt_navigator [navigate_to_pose] [ActionServer] Client requested to cancel the goal. Cancelling.
+10:55:32.135 INFO bt_navigator Goal canceled
+10:55:32.141 INFO controller_server [follow_path] [ActionServer] Client requested to cancel the goal. Cancelling.
+10:56:00.958 INFO rclcpp signal_handler(SIGINT/SIGTERM)
+10:56:00.959 WARN launch user interrupted with ctrl-c (SIGINT)
+10:56:20.435 INFO component_container_isolated-1 process started with pid [5808]
+10:56:20.436 INFO loc_status-2 process started with pid [5810]
+10:57:24.636 INFO rclcpp signal_handler(SIGINT/SIGTERM)
+10:57:24.637 WARN launch user interrupted with ctrl-c (SIGINT)
+10:57:24.787 INFO sllidar_node Stop motor
+10:57:24.875 INFO rclcpp signal_handler(SIGINT/SIGTERM)
+10:57:24.876 WARN launch user interrupted with ctrl-c (SIGINT)
+10:57:25.288 WARN launch_ros.actions.load_compos Abandoning wait for the '/nav2_container/_container/load_node' service response, due to shutdown.
+10:57:25.437 WARN launch_ros.actions.load_compos Abandoning wait for the '/nav2_container/_container/load_node' service response, due to shutdown.
+10:57:26.296 WARN launch_ros.actions.load_compos Abandoning wait for the '/nav2_container/_container/load_node' service response, due to shutdown.
+10:57:46.815 INFO robot_state_publisher-1 process started with pid [6475]
+10:57:46.815 INFO joint_state_publisher-2 process started with pid [6477]
+10:57:46.816 INFO sllidar_node-3 process started with pid [6479]
+10:57:46.817 INFO static_transform_publisher-4 process started with pid [6481]
+10:57:46.818 INFO ominibot_driver_node-5 process started with pid [6483]
+10:57:52.337 INFO ominibot_driver gyro zero offset = +0.007600 rad/s (+26.1 deg/min of heading drift removed; 40 samples)
+10:57:52.641 INFO component_container_isolated-1 process started with pid [6568]
+10:57:52.642 INFO loc_status-2 process started with pid [6570]
+10:57:55.954 INFO amcl initialPoseReceived
+10:58:07.471 INFO bt_navigator Begin navigating from current location (0.00, 0.00) to (3.16, -2.05)
+10:58:32.007 ERRO controller_server Failed to make progress
+10:58:32.175 WARN controller_server Control loop missed its desired rate of 10.0000Hz
+10:58:40.792 INFO bt_navigator Received goal preemption request
+10:58:40.795 INFO bt_navigator Begin navigating from current location (0.53, -0.41) to (2.77, -4.08)
+10:58:47.225 ERRO controller_server Failed to make progress
+10:59:02.535 ERRO controller_server Failed to make progress
+10:59:02.777 WARN controller_server Control loop missed its desired rate of 10.0000Hz
+10:59:17.777 ERRO controller_server Failed to make progress
+10:59:17.795 INFO behavior_server Running spin
+10:59:30.939 WARN planner_server Planning algorithm GridBased failed to generate a valid path to (2.77, -4.08)
+10:59:31.496 WARN planner_server Planning algorithm GridBased failed to generate a valid path to (2.77, -4.08)
+10:59:31.537 INFO behavior_server Running wait
+10:59:31.547 INFO controller_server [follow_path] [ActionServer] Client requested to cancel the goal. Cancelling.
+10:59:36.572 WARN planner_server Planning algorithm GridBased failed to generate a valid path to (2.77, -4.08)
+10:59:37.490 WARN planner_server Planning algorithm GridBased failed to generate a valid path to (2.77, -4.08)
+10:59:37.500 INFO behavior_server Running backup
+10:59:37.501 WARN behavior_server Collision Ahead - Exiting DriveOnHeading
+10:59:38.495 WARN planner_server Planning algorithm GridBased failed to generate a valid path to (2.77, -4.08)
+10:59:39.498 WARN planner_server Planning algorithm GridBased failed to generate a valid path to (2.77, -4.08)
+10:59:39.500 INFO behavior_server Running spin
+10:59:43.643 WARN planner_server Planning algorithm GridBased failed to generate a valid path to (2.77, -4.08)
+10:59:44.491 WARN planner_server Planning algorithm GridBased failed to generate a valid path to (2.77, -4.08)
+10:59:44.509 INFO behavior_server Running wait
+10:59:49.549 WARN planner_server Planning algorithm GridBased failed to generate a valid path to (2.77, -4.08)
+10:59:50.495 WARN planner_server Planning algorithm GridBased failed to generate a valid path to (2.77, -4.08)
+10:59:50.518 ERRO bt_navigator Goal failed
+11:00:44.616 INFO rclcpp signal_handler(SIGINT/SIGTERM)
+11:00:44.617 WARN launch user interrupted with ctrl-c (SIGINT)
+11:00:44.815 INFO sllidar_node Stop motor
+11:00:44.926 INFO rclcpp signal_handler(SIGINT/SIGTERM)
+11:00:44.933 WARN launch user interrupted with ctrl-c (SIGINT)
+11:00:55.719 ERRO component_container_isolated-1 process has died [pid 6568, exit code -9, cmd '/opt/ros/humble/lib/rclcpp_components/component_container_isolated --ros-args --log

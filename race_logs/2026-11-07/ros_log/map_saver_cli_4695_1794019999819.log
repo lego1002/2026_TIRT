@@ -1,0 +1,16 @@
+[INFO] [1794019999.892025592] [map_saver]: 
+	map_saver lifecycle node launched. 
+	Waiting on external lifecycle transitions to activate
+	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[INFO] [1794019999.892639672] [map_saver]: Creating
+[INFO] [1794019999.892982499] [map_saver]: Configuring
+[INFO] [1794019999.909777477] [map_saver]: Saving map from 'map' topic to '/home/lego/2026_TIRT/maps/rzce' file
+[WARN] [1794019999.909926104] [map_saver]: Free threshold unspecified. Setting it to default value: 0.250000
+[WARN] [1794019999.910010547] [map_saver]: Occupied threshold unspecified. Setting it to default value: 0.650000
+[WARN] [1794020000.904377770] [map_io]: Image format unspecified. Setting it to: pgm
+[INFO] [1794020000.911320890] [map_io]: Received a 259 X 365 map @ 0.025 m/pix
+[INFO] [1794020001.020811215] [map_io]: Writing map occupancy data to /home/lego/2026_TIRT/maps/rzce.pgm
+[INFO] [1794020001.024452549] [map_io]: Writing map metadata to /home/lego/2026_TIRT/maps/rzce.yaml
+[INFO] [1794020001.025369845] [map_io]: Map saved
+[INFO] [1794020001.025484843] [map_saver]: Map saved successfully
+[INFO] [1794020001.030184916] [map_saver]: Destroying

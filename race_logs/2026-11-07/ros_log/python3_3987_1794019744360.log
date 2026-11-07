@@ -1,0 +1,2 @@
+[INFO] [1794019744.782175770] [ominibot_driver]: Opening OminiBotHV on /dev/serial0 @ 115200 (wheel_diameter=48mm, wheel_space=115mm, axle_space=96mm, encoder_ppr=165, gear_ratio=55, pos_pid=(3000,1050,0), vel_pid=(3000,1050), pwm=(2100..7056 of 7199))
+[INFO] [1794019748.218570611] [ominibot_driver]: gyro zero offset = +0.007700 rad/s (+26.5 deg/min of heading drift removed; 40 samples)

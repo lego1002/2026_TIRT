@@ -1,0 +1,5 @@
+1794019238.4542387 [INFO] [launch]: All log files can be found below /home/lego/.ros/log/2026-11-07-10-40-38-450146-lego4g-1679
+1794019238.4550009 [INFO] [launch]: Default logging verbosity is set to INFO
+1794019238.7263515 [INFO] [async_slam_toolbox_node-1]: process started with pid [1768]
+1794019487.0763359 [WARNING] [launch]: user interrupted with ctrl-c (SIGINT)
+1794019487.3184311 [INFO] [async_slam_toolbox_node-1]: process has finished cleanly [pid 1768]

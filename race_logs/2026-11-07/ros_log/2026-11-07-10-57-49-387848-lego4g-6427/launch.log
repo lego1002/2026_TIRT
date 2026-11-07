@@ -1,0 +1,22 @@
+1794020269.3912060 [INFO] [launch]: All log files can be found below /home/lego/.ros/log/2026-11-07-10-57-49-387848-lego4g-6427
+1794020269.3918443 [INFO] [launch]: Default logging verbosity is set to INFO
+1794020272.6417089 [INFO] [component_container_isolated-1]: process started with pid [6568]
+1794020272.6426804 [INFO] [loc_status-2]: process started with pid [6570]
+1794020274.3167558 [INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/controller_server' in container '/nav2_container'
+1794020274.5975142 [INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/map_server' in container '/nav2_container'
+1794020274.7213488 [INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/smoother_server' in container '/nav2_container'
+1794020274.9002049 [INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/amcl' in container '/nav2_container'
+1794020275.0817447 [INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/planner_server' in container '/nav2_container'
+1794020275.1774075 [INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/lifecycle_manager_localization' in container '/nav2_container'
+1794020275.7126215 [INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/behavior_server' in container '/nav2_container'
+1794020275.8929448 [INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/bt_navigator' in container '/nav2_container'
+1794020276.1419506 [INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/waypoint_follower' in container '/nav2_container'
+1794020276.2847412 [INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/velocity_smoother' in container '/nav2_container'
+1794020276.4031703 [INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/lifecycle_manager_navigation' in container '/nav2_container'
+1794020444.9336615 [WARNING] [launch]: user interrupted with ctrl-c (SIGINT)
+1794020445.7499220 [INFO] [loc_status-2]: process has finished cleanly [pid 6570]
+1794020450.6840317 [ERROR] [component_container_isolated-1]: process[component_container_isolated-1] failed to terminate '5' seconds after receiving 'SIGINT', escalating to 'SIGTERM'
+1794020450.6861894 [INFO] [component_container_isolated-1]: sending signal 'SIGTERM' to process[component_container_isolated-1]
+1794020455.6839924 [ERROR] [component_container_isolated-1]: process[component_container_isolated-1] failed to terminate '10.0' seconds after receiving 'SIGTERM', escalating to 'SIGKILL'
+1794020455.6881845 [INFO] [component_container_isolated-1]: sending signal 'SIGKILL' to process[component_container_isolated-1]
+1794020455.7190080 [ERROR] [component_container_isolated-1]: process has died [pid 6568, exit code -9, cmd '/opt/ros/humble/lib/rclcpp_components/component_container_isolated --ros-args --log-level info --ros-args -r __node:=nav2_container --params-file /tmp/launch_params_g4ouen99 --params-file /tmp/launch_params_0huonhxf -r /tf:=tf -r /tf_static:=tf_static'].

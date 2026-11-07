@@ -1,0 +1,9 @@
+/**:
+  ros__parameters:
+    angle_compensate: true
+    channel_type: serial
+    frame_id: laser_frame
+    inverted: false
+    scan_mode: Standard
+    serial_baudrate: 460800
+    serial_port: /dev/rplidar

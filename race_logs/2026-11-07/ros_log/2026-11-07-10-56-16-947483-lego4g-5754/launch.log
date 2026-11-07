@@ -1,0 +1,10 @@
+1794020176.9515650 [INFO] [launch]: All log files can be found below /home/lego/.ros/log/2026-11-07-10-56-16-947483-lego4g-5754
+1794020176.9522898 [INFO] [launch]: Default logging verbosity is set to INFO
+1794020180.4354110 [INFO] [component_container_isolated-1]: process started with pid [5808]
+1794020180.4365985 [INFO] [loc_status-2]: process started with pid [5810]
+1794020244.8763680 [WARNING] [launch]: user interrupted with ctrl-c (SIGINT)
+1794020245.2880638 [WARNING] [launch_ros.actions.load_composable_nodes]: Abandoning wait for the '/nav2_container/_container/load_node' service response, due to shutdown.
+1794020245.4378974 [WARNING] [launch_ros.actions.load_composable_nodes]: Abandoning wait for the '/nav2_container/_container/load_node' service response, due to shutdown.
+1794020245.4755669 [INFO] [component_container_isolated-1]: process has finished cleanly [pid 5808]
+1794020245.4760954 [INFO] [loc_status-2]: process has finished cleanly [pid 5810]
+1794020246.2966723 [WARNING] [launch_ros.actions.load_composable_nodes]: Abandoning wait for the '/nav2_container/_container/load_node' service response, due to shutdown.

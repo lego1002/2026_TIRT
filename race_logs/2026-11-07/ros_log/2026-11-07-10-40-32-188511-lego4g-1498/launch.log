@@ -1,0 +1,13 @@
+1794019232.1959329 [INFO] [launch]: All log files can be found below /home/lego/.ros/log/2026-11-07-10-40-32-188511-lego4g-1498
+1794019232.1965306 [INFO] [launch]: Default logging verbosity is set to INFO
+1794019232.6603000 [INFO] [robot_state_publisher-1]: process started with pid [1623]
+1794019232.6611164 [INFO] [joint_state_publisher-2]: process started with pid [1625]
+1794019232.6618283 [INFO] [sllidar_node-3]: process started with pid [1627]
+1794019232.6625793 [INFO] [static_transform_publisher-4]: process started with pid [1629]
+1794019232.6634169 [INFO] [ominibot_driver_node-5]: process started with pid [1631]
+1794019486.8418789 [WARNING] [launch]: user interrupted with ctrl-c (SIGINT)
+1794019487.0780597 [INFO] [static_transform_publisher-4]: process has finished cleanly [pid 1629]
+1794019487.1655183 [INFO] [robot_state_publisher-1]: process has finished cleanly [pid 1623]
+1794019487.4494269 [INFO] [joint_state_publisher-2]: process has finished cleanly [pid 1625]
+1794019487.4724367 [INFO] [sllidar_node-3]: process has finished cleanly [pid 1627]
+1794019487.6027484 [INFO] [ominibot_driver_node-5]: process has finished cleanly [pid 1631]

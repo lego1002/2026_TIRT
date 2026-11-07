@@ -1,0 +1,32 @@
+/**:
+  ros__parameters:
+    angular_z_sign: -1.0
+    axle_space_mm: 96
+    cmd_angular_scale: 7.43
+    cmd_linear_scale: 6.54
+    cmd_sync_to_feedback: true
+    cmd_vel_best_effort: true
+    cmd_vel_timeout: 1.0
+    encoder_direct: 10
+    encoder_ppr: 165
+    gear_ratio: 55
+    gyro_auto_bias: true
+    gyro_scale: 1.014
+    gyro_z_sign: 1.0
+    linear_x_sign: 1.0
+    linear_y_sign: -1.0
+    motor_direct: 0
+    motor_pwm_max: 7056
+    motor_pwm_min: 2100
+    odom_angular_scale: 0.195
+    odom_linear_scale: 0.153
+    odom_max_gap: 1.0
+    port: /dev/serial0
+    pos_kd: 0
+    pos_ki: 1050
+    pos_kp: 3000
+    use_gyro_heading: true
+    vel_ki: 1050
+    vel_kp: 3000
+    wheel_diameter_mm: 48
+    wheel_space_mm: 115

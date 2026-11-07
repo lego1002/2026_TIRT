@@ -1,0 +1,17 @@
+1794020057.3835633 [INFO] [launch]: All log files can be found below /home/lego/.ros/log/2026-11-07-10-54-17-378803-lego4g-5150
+1794020057.3843625 [INFO] [launch]: Default logging verbosity is set to INFO
+1794020060.7587149 [INFO] [component_container_isolated-1]: process started with pid [5361]
+1794020060.7598753 [INFO] [loc_status-2]: process started with pid [5363]
+1794020062.5305316 [INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/controller_server' in container '/nav2_container'
+1794020062.7140479 [INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/map_server' in container '/nav2_container'
+1794020062.8213711 [INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/smoother_server' in container '/nav2_container'
+1794020062.9728198 [INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/amcl' in container '/nav2_container'
+1794020063.2246144 [INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/planner_server' in container '/nav2_container'
+1794020063.6233668 [INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/lifecycle_manager_localization' in container '/nav2_container'
+1794020064.0221465 [INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/behavior_server' in container '/nav2_container'
+1794020064.2829075 [INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/bt_navigator' in container '/nav2_container'
+1794020064.6165075 [INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/waypoint_follower' in container '/nav2_container'
+1794020064.7413578 [INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/velocity_smoother' in container '/nav2_container'
+1794020064.8494022 [INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/lifecycle_manager_navigation' in container '/nav2_container'
+1794020160.9590089 [WARNING] [launch]: user interrupted with ctrl-c (SIGINT)
+1794020162.0109565 [INFO] [loc_status-2]: process has finished cleanly [pid 5363]

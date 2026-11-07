@@ -1,0 +1,667 @@
+# Nav2 參數 —— 為這台 0.15m 級麥克納姆小車 + 201 教室迷宮量身調過的版本。
+#
+# 基底是 nav2_bringup 的 nav2_params.yaml(TurtleBot3 尺寸、差速輪、Gazebo 時間),
+# 下面每一處和原版不同的地方都寫了原因。改參數前請先讀 notes/SLAM_learning_note.md,
+# odom 的怪癖(raw 回報放大 6.5 倍、靠 gyro 積分航向)全部記在那邊。
+#
+# 和原版差最多的四件事:
+#   1. use_sim_time 全部 false —— 我們吃 Pi 的真實時間戳(兩台機器時鐘要大致同步)。
+#   2. base_frame 是 base_link,不是 base_footprint(這台 URDF 沒有 base_footprint)。
+#   3. 全部改成 holonomic:AMCL 用 OmniMotionModel、controller 用 MPPI 的 Omni
+#      motion model、y 方向速度不再是 0 —— 麥克納姆會橫移,不用它等於白裝。
+#   4. 尺寸全部縮小一個級別:robot_radius 0.22→0.09、inflation 0.55→0.18、
+#      goal tolerance 0.25→0.10。原版的數字是給 0.3m 車在空曠房間跑的,直接套到
+#      迷宮上會讓整條走道都變成致命代價區,planner 會直接說「找不到路」。
+
+amcl:
+  ros__parameters:
+    use_sim_time: false
+
+    # === 座標系 ===
+    base_frame_id: "base_link"      # 原版是 base_footprint;本 URDF 沒有那個 link
+    odom_frame_id: "odom"
+    global_frame_id: "map"
+    scan_topic: /scan
+
+    # === 運動模型 ===
+    # 麥克納姆會橫移,差速模型會把「原地平移」解釋成不可能發生的運動,粒子雲會被
+    # 拉歪。OmniMotionModel 才吃得下 y 方向位移。
+    robot_model_type: "nav2_amcl::OmniMotionModel"
+    # odom 雜訊參數。2026-10-10 從 0.3 收到 0.1:當初放寬是因為 odom 沒校正
+    # (cmd/feedback 倍率錯、gyro 零點漂),現在捲尺實測直走 1 m 誤差 0.2%、
+    # 橫移 +7%、自轉 360° 誤差 2%。還用 0.3 的話,每走 5 cm 粒子就被撒開一大片,
+    # 雲散到地圖外好幾公尺(2026-10-10 截圖),位姿估計跟著亂跳 → 車子「很快但不準」。
+    alpha1: 0.1     # 旋轉造成的旋轉誤差
+    alpha2: 0.1     # 平移造成的旋轉誤差
+    alpha3: 0.1     # 平移造成的平移誤差
+    alpha4: 0.1     # 旋轉造成的平移誤差
+    alpha5: 0.15     # omni 專用:橫移誤差
+
+    # === 光達模型(RPLidar C1) ===
+    laser_model_type: "likelihood_field"
+    laser_max_range: 12.0     # C1 規格上限;原版 100.0 是模擬器的假數字
+    laser_min_range: 0.15     # 和 slam_toolbox 的 min_laser_range 一致,濾掉近距雜點
+    max_beams: 120            # 房間小、牆多,多給一點 beam 匹配更穩(原版 60)
+    # 雷射權重(2026-10-10 收緊):sigma_hit 0.2 → 0.1 = 「scan 離牆 10 cm 以內才算貼」,
+    # 0.2 對 44 cm 走道太鬆,紅點偏半格也算對;z_hit 0.5 → 0.8 / z_rand 0.5 → 0.2
+    # = 更相信 lidar、少當雜訊。odom 準了之後,定位應該主要靠 scan 拉回來。
+    sigma_hit: 0.1
+    z_hit: 0.8
+    z_max: 0.05
+    z_rand: 0.2
+    z_short: 0.05
+    lambda_short: 0.1
+    laser_likelihood_max_dist: 2.0
+    do_beamskip: false
+    beam_skip_distance: 0.5
+    beam_skip_error_threshold: 0.9
+    beam_skip_threshold: 0.3
+
+    # === 粒子濾波 ===
+    min_particles: 500
+    max_particles: 2000
+    pf_err: 0.05
+    pf_z: 0.99
+    resample_interval: 1
+    recovery_alpha_slow: 0.0    # 0.0 = 關閉隨機粒子注入;小地圖用不到,開了反而抖
+    recovery_alpha_fast: 0.0
+    # 更新門檻(原版 0.25m / 0.2rad)。這兩個值決定「車移動多少,AMCL 才拿新的 scan
+    # 做一次濾波更新」;沒達到門檻時 AMCL 完全不修正,誤差就一直掛著。
+    #
+    # 2026-07-28 再往下調(0.10/0.15 → 0.05/0.05):實測用 tools/scan_match_check.py
+    # 量到點雲相對地圖有 +8~10° 的航向誤差、位移誤差 0,而 update_min_a 當時正是
+    # 0.15rad ≈ 8.6° —— 誤差量級和門檻一樣大並非巧合:兩次更新之間的航向誤差本來就
+    # 會累積到接近門檻才被修掉。而這台是麥克納姆,滾子打滑讓兩次更新之間的 odom 航向
+    # 特別不可靠,所以比一般車更需要密集更新。
+    #   8° 的航向誤差在 3m 遠處 = 0.42m 的偏移 → 近牆看起來還貼合、遠牆整片歪掉,
+    #   正是「點雲和地圖疊不起來」的典型樣子。
+    # 代價是 CPU(每次更新要對 500~2000 個粒子算 likelihood),但 SLAM/Nav2 都跑在
+    # PC 上,這個量級無感。真的抖(位姿跳動)再往回調。
+    update_min_d: 0.05
+    update_min_a: 0.05
+    save_pose_rate: 0.5
+
+    # === TF ===
+    tf_broadcast: true
+    # 1.0s(原版 1.0,這裡是刻意保留):/scan 和 odom TF 都要跨 WiFi 過來,實測突發
+    # 停頓可達 0.47s(見 0721_net_issue_plan.md),容忍度不能設小。
+    transform_tolerance: 1.0
+
+    # === 初始位置 ===
+    # 地圖是 slam_toolbox 從「開機那一刻的車體位置」開始建的,所以 map 原點就是
+    # 起跑點。把車放回同一個位置開機,AMCL 就自動對好,不必每次在 RViz 點
+    # 2D Pose Estimate。放的位置不同時,還是要手動點一次。
+    set_initial_pose: true
+    initial_pose:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      yaw: 0.0
+
+map_server:
+  ros__parameters:
+    use_sim_time: false
+    # 由 launch 的 map:= 覆寫(nav2_bringup 用 RewrittenYaml 塞進來),這裡留空。
+    # 地圖檔刻意放在 repo 的 maps/ 而不是 package share:新存一張圖就不用重 build。
+    yaml_filename: ""
+
+# ---------------------------------------------------------------------------
+# Costmap:整份設定裡最容易讓「planner 找不到路」的地方就是這裡的尺寸。
+#
+# 車體實測約 0.16(左右)× 0.14(前後)m,對角半徑 ≈ 0.108。
+#
+# ★ robot_radius 用 0.09,不是幾何上「正確」的 0.11(2026-07-28 實機量測後改)。
+#   0.11 的實際後果是**整個迷宮走不了**:車體半徑決定 costmap 的 inscribed 帶
+#   (代價 253,planner 直接當成牆),0.11 會讓 201 迷宮的走道兩側 inscribed 帶接起來
+#   → 地圖被切成互不相通的小塊。用 tools/costmap_check.py 在 201_self_test 上量到的
+#   斷崖非常陡:
+#       robot_radius 0.12 → 最大連通區  3.74 m²
+#       robot_radius 0.11 → 最大連通區  4.07 m²   ← 原本的設定,走不出去
+#       robot_radius 0.10 → 最大連通區 39.10 m²   ← 整張圖連通
+#       robot_radius 0.09 → 最大連通區 39.10 m²
+#   斷崖在 0.11 與 0.10 之間(地圖 0.05m 一格,所以 0.10 以下都等價),取 0.09 留餘裕。
+#
+#   代價要講清楚:0.09 比真實對角半徑 0.108 小,所以**車角有可能擦到牆** ——
+#   planner 認為過得去的縫,實際上四個角會超出去約 1.8cm。這是刻意的取捨:0.11
+#   的替代方案不是「比較安全」,而是「完全不能導航」。真的常擦牆的話,正解不是把
+#   robot_radius 調回去,而是改用矩形 footprint(把 robot_radius 換成
+#   footprint: "[[0.072,0.08],[0.072,-0.08],[-0.072,-0.08],[-0.072,0.08]]"),
+#   那樣 inscribed 半徑會變成 0.072(短邊),既精確又過得去 —— 但 NavFn 是 2D 網格
+#   planner,不考慮車體朝向,實際避障還是靠 controller,所以先用簡單的圓形
+#   (麥克納姆可以原地自轉,圓形本來就是合理的近似)。
+#
+# inflation_radius 0.18 的算法:走道寬 W 時,牆兩側各有 robot_radius=0.09 的
+# 「內切致命區」,車心可走的自由帶寬度 = W - 0.22。走道 0.5m → 剩 0.28m,夠過;
+# 走道 0.4m → 剩 0.18m,很擠但過得去。如果 planner 一直說 no path,先把
+# inflation_radius 降到 0.13、再往下調 robot_radius,不要先去動 planner。
+# 判斷不要靠猜:python3 tools/costmap_check.py 會直接把連通性斷崖印出來。
+# ---------------------------------------------------------------------------
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      use_sim_time: false
+      update_frequency: 5.0      # controller 跑 10Hz,costmap 至少要一半(2026-10-26 全部搬上 Pi 後減半)
+      publish_frequency: 5.0
+      global_frame: odom
+      robot_base_frame: base_link
+      rolling_window: true
+      # 注意 width/height 在 nav2_costmap_2d 裡宣告成「整數公尺」,寫 2.5 會讓
+      # controller_server 在建構時就丟 "parameter {height} is of type {integer}" 而
+      # 整個 nav2_container 載不起來(實機踩過)。所以只能是整數 → 3×3m。
+      width: 3
+      height: 3
+      resolution: 0.05           # 地圖(mapper_params)2026-09-12 起改 0.025;static layer 會重採樣,costmap 先留 0.05
+      robot_radius: 0.09
+      # 原版用 voxel_layer(3D 體素),但我們只有一顆 2D 光達,ObstacleLayer 就夠,
+      # 而且便宜很多。
+      plugins: ["obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: True
+        observation_sources: scan
+        scan:
+          topic: /scan
+          data_type: "LaserScan"
+          clearing: True
+          marking: True
+          max_obstacle_height: 2.0
+          raytrace_max_range: 6.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 5.0
+          obstacle_min_range: 0.0
+          inf_is_valid: false
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 5.0   # 比原版 3.0 陡:代價衰減快,走道中線才明顯最便宜
+        inflation_radius: 0.18
+      always_send_full_costmap: True
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      use_sim_time: false
+      update_frequency: 1.0
+      publish_frequency: 1.0
+      global_frame: map
+      robot_base_frame: base_link
+      resolution: 0.05
+      robot_radius: 0.09
+      track_unknown_space: true    # 迷宮裡「沒掃到」不等於「可以走」
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: True   # /map 是 latched 的,少了這個收不到
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: True
+        observation_sources: scan
+        scan:
+          topic: /scan
+          data_type: "LaserScan"
+          clearing: True
+          marking: True
+          max_obstacle_height: 2.0
+          raytrace_max_range: 6.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 5.0
+          obstacle_min_range: 0.0
+          inf_is_valid: false
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 5.0
+        inflation_radius: 0.18
+      always_send_full_costmap: True
+
+planner_server:
+  ros__parameters:
+    use_sim_time: false
+    # ★ 這個參數**不是**重新規劃的頻率(很容易誤會)。在 Humble 的 planner_server 裡
+    #   它只被拿來當 max_planner_duration_,也就是「算超過這個時間就印一行
+    #   Planner loop missed its desired rate」的門檻。真正的重規劃節奏是由行為樹決定的:
+    #   nav2_bt_navigator 的 navigate_to_pose_w_replanning_and_recovery.xml 第 11 行是
+    #   <RateController hz="1.0">。
+    #   所以把 20.0 改成 1.0 不會變快,而是**讓警告變得有意義**:原本門檻是 50ms,
+    #   規劃只要超過 50ms 就狂噴警告,真正的超時被淹沒在假警報裡。2026-08-15 改。
+    expected_planner_frequency: 1.0
+    planner_plugins: ["GridBased"]
+    GridBased:
+      plugin: "nav2_navfn_planner/NavfnPlanner"
+      tolerance: 0.15      # 原版 0.5m 比整台車還大,迷宮裡會規到牆的另一側
+      # 2026-08-15 true → false:回報「路徑很奇怪,不像最短的那條」。NavFn 的 A*
+      # 是近似實作,產生的路徑常比它自己的 Dijkstra 模式更歪(而且它是用梯度下降
+      # 抽路徑,本來就會有鋸齒)。地圖只有 168×104 格,全域 Dijkstra 在 Pi 上也是
+      # 瞬間,沒有省時間的必要。若還是不夠直,下一步換 nav2_smac_planner/SmacPlanner2D
+      # (自帶平滑)—— 不要換 ThetaStar:它的任意角度路徑會貼著牆走對角線,而規則是
+      # 碰牆即失敗。
+      use_astar: false
+      allow_unknown: false # 關鍵:不准穿過未知區域。開著的話它會很樂意規劃穿牆
+
+controller_server:
+  ros__parameters:
+    use_sim_time: false
+    # 20 → 10(2026-10-26):單機模式下 nav2 + RViz + 其他全在 Pi 上,20Hz 時 log 一直
+    # 「Control loop missed its desired rate」,實際只有 ~10Hz、負載 9/4 核、81°C,
+    # 接著 progress_checker 判 Failed to make progress。0.35 m/s × 0.1 s = 3.5 cm/cycle,
+    # 迷宮裡夠用。driver 的 cmd_vel_timeout 1.0 s,10Hz 還有 10 倍餘裕。
+    controller_frequency: 10.0
+    # 這三個是「odom 回報速度低於此值就當成 0」的門檻。原版 y 是 0.5(給差速輪用,
+    # 直接把橫移當雜訊丟掉)—— 對麥克納姆是災難,必須降到跟 x 一樣。
+    min_x_velocity_threshold: 0.001
+    min_y_velocity_threshold: 0.001
+    min_theta_velocity_threshold: 0.001
+    failure_tolerance: 0.3
+    progress_checker_plugin: "progress_checker"
+    goal_checker_plugins: ["general_goal_checker"]
+    controller_plugins: ["FollowPath"]
+
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      # 原版要求 10s 內移動 0.5m。這台跑 0.2m/s、在迷宮裡還要轉彎,0.5m 太嚴,
+      # 會誤判卡住而觸發 recovery。
+      required_movement_radius: 0.10
+      movement_time_allowance: 15.0
+
+    general_goal_checker:
+      stateful: True
+      plugin: "nav2_controller::SimpleGoalChecker"
+      xy_goal_tolerance: 0.10    # 原版 0.25m > 車身尺寸,等於「到附近就算到」
+      # 2026-08-15 0.20 → 3.15(> pi,等於「朝向檢查永遠通過」)。
+      # 比賽規則沒有規定完賽時車頭要朝哪個方向,而麥克納姆是全向底盤、光達是 360°,
+      # 朝向對後續動作也沒有任何影響 —— 所以在終點前花時間轉正是純粹的浪費。
+      # 這一項要和上面 critics 裡拿掉 RotateToGoal 一起看:兩者是同一個修正的兩半,
+      # 只改其中一個沒有用(留著 RotateToGoal 的話它仍然會擋住平移)。
+      # 2026-10-10 3.15 → 0.15(約 9°),RotateToGoal 加回:使用者要終點朝向正確。
+      # 當初拿掉的理由是「角速度被衰減 8 倍,原地轉轉不完」—— cmd_angular_scale
+      # 校正後真實 0.8 rad/s,轉 90° 只要 2 秒,那個理由已經不存在。
+      yaw_goal_tolerance: 0.15
+
+    # =======================================================================
+    # === 局部規劃器 FollowPath:DWB,但打開 y 方向(橫移) ===
+    #
+    # 和原版最大的差別是 max_vel_y / vy_samples 不再是 0 —— 原版是差速輪設定,
+    # y 全部鎖死,麥克納姆會完全不橫移。
+    #
+    # 為什麼是 DWB 而不是 MPPI:MPPI 的 motion_model: "Omni" 對麥克納姆理論上更好
+    # (見檔尾註解),但 2026-07-28 實測 nav2_mppi_controller 的 arm64 binary 在
+    # Pi 4(Cortex-A72)上一載入就 SIGILL(exit code -4)—— 那顆 CPU 缺了它編譯時
+    # 用到的指令。Nav2 平常跑在 PC 上碰不到這件事,但「在其中一台機器上必定崩潰」
+    # 不適合當預設值,所以預設用純 C++、哪裡都跑得動的 DWB。想換 MPPI 見檔尾。
+    # =======================================================================
+    FollowPath:
+      plugin: "dwb_core::DWBLocalPlanner"
+      debug_trajectory_details: True
+      # === 速度上下限 ===
+      # ★ 不要手動改這一區。用 `python3 tools/apply_calibration.py`,它會把下面
+      #   三個地方連同速度下限一起改,並重驗煞停距離和 /odom 的飽和天花板。
+      #   ⚠ 這裡的數字是「真實 m/s」還是「名目值」,取決於 driver 的
+      #     cmd_linear_scale 有沒有校正過(未校正時真實速度只有名目的 1/8)。
+      # ★ 改速度必須「三個地方一起改」,只改這裡沒有用:
+      #     1. 這裡(DWB 產生候選軌跡的範圍)
+      #     2. velocity_smoother 的 max_velocity / min_velocity(在檔案下方)
+      #        —— smoother 在最後一關把指令夾回它自己的上限,這裡開到 0.35 而
+      #        smoother 留 0.20,實際跑出來就是 0.20,而且完全不會有任何警告。
+      #     3. behavior_server 的 max_rotational_vel(recovery 自轉時才用到)
+      #   詳細的調參順序寫在 notes/nav2_tuning.md。
+      min_vel_x: -0.35      # 允許倒車(進了死路要退出來)
+      max_vel_x: 0.35
+      min_vel_y: -0.14      # <<< 麥克納姆的關鍵:原版是 0.0
+      max_vel_y: 0.14       # <<< 同上
+      max_vel_theta: 0.80
+      # === 速度下限:★ 這兩個值和 cmd_linear_scale 的標定是綁死的 ===
+      #
+      # 【它們是什麼】DWB 的 KinematicParameters::isValidSpeed() 判斷式是
+      #       (平移慢於 min_speed_xy) AND (自轉慢於 min_speed_theta) → 丟掉
+      #   兩個條件是 **AND**,所以單獨設 min_speed_xy 完全沒有作用:min_speed_theta
+      #   留在原版的 0.0 時,「自轉慢於 0.0」永遠不成立,整條判斷永遠是 false。
+      #   要關掉這道下限,把 min_speed_theta 設 0.0 就夠了(本檔兩個都設成關閉值,
+      #   是為了讓意圖在 YAML 上看得出來,而不是靠「設 0 讓另一個變成死參數」)。
+      #
+      # 【2026-07-28 為什麼加】DWB 常挑出 0.02-0.03 m/s 的軌跡,這台 N20 在那個速度
+      #   扭力不足,輪子原地打滑、車不動,nav2 卻以為在前進,最後被 progress_checker
+      #   判定卡住而觸發 recovery。
+      #
+      # 【2026-10-09 為什麼要拿掉】上面那個「扭力不足」本來就是 cmd 路徑 8× 衰減造成
+      #   的假象 —— 名目 0.03 的真實值只有 0.004 m/s,當然推不動。這道下限是 OK 繃,
+      #   不是解法。而且它自己會製造「到定點一直抖動」:速度 (0,0,0) 同時低於兩個門檻
+      #   → 被判 illegal → **「停住」這條軌跡根本不在候選名單裡**。只要 goal checker
+      #   還沒 latch,DWB 每個 cycle 都被迫挑一條非零軌跡;終點附近路徑只剩幾公分,
+      #   PathDist / PathAlign 分不出高下,就變成在一堆同分的非零軌跡裡亂挑 = 抖動。
+      #
+      # ⚠ 所以「校正 cmd_linear_scale」和「關掉這道下限」必須**同一次**做完:
+      #     只校正不關 → 下限語意從命令空間 0.0075 m/s 變成真實 0.06 m/s(嚴格 8 倍),
+      #                  44cm 走道裡會開始噴 no valid trajectories。
+      #     只關不校正 → 退回 2026-07-28 的原始症狀,輪子打滑、車不動。
+      #   用 `python3 tools/apply_calibration.py` 一次改完,它會連同 velocity_smoother
+      #   和 behavior_server 的速度一起改,並重驗煞停距離。不要手動只改這兩行。
+      #
+      # ⚠ 另一個副作用(下限開著時才有):走道很窄時如果所有候選軌跡都被刷掉,
+      #   DWB 會回報找不到可行軌跡 → controller 失敗 → 觸發 recovery。
+      min_speed_xy: -1.00    # 負值 = 關閉(見上面的說明)
+      min_speed_theta: 0.00    # 0.0 = 關閉(見上面的說明)
+      # x、y 合成速度上限。不能讓 x、y 各自開滿:麥克納姆每顆輪的速度約 |vx|+|vy|+k|wz|,
+      # 輪速天花板實測 0.44 m/s(2026-10-27,PWM 98%),0.35+0.14 斜走就會頂到 → 實際比
+      # 命令慢、DWB 預測失準(2026-10-10 Run1/Run2 甩尾就是這樣)。
+      max_speed_xy: 0.35
+      # 加減速限制。★ 這是「開快」和「打滑」之間真正的取捨點,不是最高速。
+      # 麥克納姆的滾子一打滑,里程計就毀了(這台的航向已經因此改用 gyro 積分,
+      # 見 notes/SLAM_learning_note.md),所以最高速可以往上加,加速度要慢慢加。
+      # 覺得起步/煞車在打滑就先降這裡,不要先降 max_vel_x。
+      acc_lim_x: 1.5
+      acc_lim_y: 1.5
+      acc_lim_theta: 3.0
+      decel_lim_x: -2.0
+      decel_lim_y: -2.0
+      decel_lim_theta: -3.0
+      # 取樣數 = 候選軌跡數。原本 12×8×15 = 1440 條/cycle 是在筆電上跑的;2026-10-26 起
+      # nav2 跑在 Pi 上,改成 8×6×10 = 480 條,配合 controller_frequency 減半,總計算量約 1/6。
+      # vy 仍保留 6 個以上取樣,因為橫移是真的會用到的自由度。
+      vx_samples: 8
+      vy_samples: 6
+      vtheta_samples: 10
+      # 每條軌跡往前模擬多久。1.5s × 0.35m/s ≈ 前方 0.5m,對迷宮的走道長度剛好。
+      # 再加大會開始「看過轉角」而選出撞牆的軌跡。
+      sim_time: 1.5
+      linear_granularity: 0.05
+      angular_granularity: 0.025
+      transform_tolerance: 0.5   # 跨 WiFi 的 TF,比原版 0.2 放寬
+      xy_goal_tolerance: 0.10
+      trans_stopped_velocity: 0.05
+      short_circuit_trajectory_evaluation: True
+      stateful: True
+      # critics = 評分項。沿用原版組合(這組沒有 PreferForward 之類會否決橫移的項),
+      # 只把權重照 holonomic 的需求調整。
+      # 2026-08-15 把 RotateToGoal 整個拿掉 —— 這是「快到終點卻卡住」的真正原因。
+      # RotateToGoal 不只是一個評分項,它是一道**閘門**:一旦車心進入 xy_goal_tolerance,
+      # 它的 prepare() 會把所有「還在平移」的軌跡直接判為 illegal,強迫車子先完全停下,
+      # 然後只准原地轉,直到朝向進入 yaw_goal_tolerance 為止。配上目前被衰減約 8 倍的
+      # 角速度指令,那段原地轉幾乎轉不完 —— 看起來就是「到了終點在磨」。
+      # 規則沒有規定完賽時車頭要朝哪(見下面 yaw_goal_tolerance),所以這道閘門是純損失。
+      # 注意:PathAlign / GoalAlign 必須留著。三個轉向評分項如果一起拿掉,DWB 就沒有
+      # 任何一項會懲罰旋轉,轉與不轉的軌跡分數完全相同,結果是隨機亂轉 —— 比現在更糟。
+      # 2026-10-10 加 Twirling + 加回 RotateToGoal(見 yaw_goal_tolerance 的說明)。
+      # Twirling 的來由:實跑錄到叫它「直走 43cm」,DWB 卻一路下 vy=-0.14 + wz 爬到 0.8,
+      # 車頭轉了 55° 甩尾進終點。原因是沒有任何評分項真的在罰「邊走邊轉」——
+      # PathAlign/GoalAlign 只看車頭前 10cm 那一點,權重又刻意壓低,於是 vtheta 變成
+      # DWB 拿來「彎」軌跡終點的免費旋鈕。TwirlingCritic 罰 |vtheta|,但**只在有平移時**
+      # (純原地轉不罰),正好是麥克納姆要的:要轉就停下來轉,走的時候車頭鎖住。
+      critics: ["RotateToGoal", "Oscillation", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist", "Twirling"]
+      Twirling.scale: 5.0
+      RotateToGoal.scale: 32.0
+      RotateToGoal.slowing_factor: 2.0
+      RotateToGoal.lookahead_time: -1.0
+      # 0.02 是 nav2 原廠預設,對上 PathDist 的 32.0 等於 1600:1 —— controller 幾乎
+      # 完全不看障礙代價。撞牆這件事本身還是有硬約束(DWB 掃到 lethal 格會直接把該條
+      # 軌跡判為 illegal),所以 scale 影響的是「偏好」:走道 44cm、inflation_radius
+      # 0.18 讓整條走道都有代價梯度,提高權重的實際效果是**把車壓在走道中線**。
+      # 比賽規則是碰到牆該次就失敗,所以這個偏好值得買。2026-08-15 0.02 → 0.5。
+      # 先取 0.5 這種保守值,是因為反方向的失效模式更難看也更難診斷:走道只有 44cm、
+      # inflation_radius 0.18 幾乎覆蓋整條走道,權重太高會讓每一條軌跡看起來都很貴,
+      # DWB 可能寧可停下來不動。實跑仍會擦牆再往上推(上限約 2.0);若變得畏縮、
+      # 在走道中間猶豫不前,就往回降到 0.2。
+      BaseObstacle.scale: 0.5
+      # PathAlign / GoalAlign 是「把車頭轉去對齊路徑/目標方向」的評分項。對差速輪
+      # 這是必要的(不轉頭就走不動),但麥克納姆可以直接橫移過去,權重留太高會逼它
+      # 做多餘的轉身。原版 32/24 → 降到 12/8,把主導權交給 PathDist(貼齊路徑位置)。
+      # 2026-08-15 再降到 6/4:回報「轉彎會卡頓」,而 notes/nav2_tuning.md:174-176
+      # 早就把「還是會先轉再走就把 PathAlign 降到 6」列為下一步,只是一直沒做。
+      PathAlign.scale: 6.0
+      PathAlign.forward_point_distance: 0.1
+      GoalAlign.scale: 4.0
+      GoalAlign.forward_point_distance: 0.1
+      PathDist.scale: 32.0       # 位置要貼齊全域路徑,迷宮裡不能自己抄捷徑
+      GoalDist.scale: 24.0
+      # RotateToGoal.* 的三個參數已隨 critic 一起移除(見上面 critics 的說明)。
+      # 副作用要知道:少了 RotateToGoal 就沒有任何評分項會在接近終點時減速,車子會
+      # 直接開到 goal checker 觸發才停。用現在的數字算:0.25 m/s 配 decel_lim_x -1.5
+      # → 煞停距離約 2cm,遠小於 xy_goal_tolerance 的 10cm,所以不會衝過頭。
+      # 之後若把 max_vel_x 推到 0.35 以上,要重算這個餘裕。
+      Oscillation.scale: 1.0
+      # 「移動多遠才算脫離振盪」。原版 0.05m 對這台 0.15m 的小車偏大,容易誤判成
+      # 卡住而把某些方向鎖起來。
+      Oscillation.oscillation_reset_dist: 0.03
+      Oscillation.oscillation_reset_angle: 0.1
+
+bt_navigator:
+  ros__parameters:
+    use_sim_time: false
+    global_frame: map
+    robot_base_frame: base_link
+    odom_topic: /odom
+    bt_loop_duration: 10
+    default_server_timeout: 20
+    wait_for_service_timeout: 1000
+    # 這份清單是「行為樹可以用哪些節點」的註冊表,少一個就會在載入 XML 時炸掉。
+    # 直接照 nav2_bringup 原版抄,不要精簡。
+    plugin_lib_names:
+      - nav2_compute_path_to_pose_action_bt_node
+      - nav2_compute_path_through_poses_action_bt_node
+      - nav2_smooth_path_action_bt_node
+      - nav2_follow_path_action_bt_node
+      - nav2_spin_action_bt_node
+      - nav2_wait_action_bt_node
+      - nav2_assisted_teleop_action_bt_node
+      - nav2_back_up_action_bt_node
+      - nav2_drive_on_heading_bt_node
+      - nav2_clear_costmap_service_bt_node
+      - nav2_is_stuck_condition_bt_node
+      - nav2_goal_reached_condition_bt_node
+      - nav2_goal_updated_condition_bt_node
+      - nav2_globally_updated_goal_condition_bt_node
+      - nav2_is_path_valid_condition_bt_node
+      - nav2_initial_pose_received_condition_bt_node
+      - nav2_reinitialize_global_localization_service_bt_node
+      - nav2_rate_controller_bt_node
+      - nav2_distance_controller_bt_node
+      - nav2_speed_controller_bt_node
+      - nav2_truncate_path_action_bt_node
+      - nav2_truncate_path_local_action_bt_node
+      - nav2_goal_updater_node_bt_node
+      - nav2_recovery_node_bt_node
+      - nav2_pipeline_sequence_bt_node
+      - nav2_round_robin_node_bt_node
+      - nav2_transform_available_condition_bt_node
+      - nav2_time_expired_condition_bt_node
+      - nav2_path_expiring_timer_condition
+      - nav2_distance_traveled_condition_bt_node
+      - nav2_single_trigger_bt_node
+      - nav2_goal_updated_controller_bt_node
+      - nav2_is_battery_low_condition_bt_node
+      - nav2_navigate_through_poses_action_bt_node
+      - nav2_navigate_to_pose_action_bt_node
+      - nav2_remove_passed_goals_action_bt_node
+      - nav2_planner_selector_bt_node
+      - nav2_controller_selector_bt_node
+      - nav2_goal_checker_selector_bt_node
+      - nav2_controller_cancel_bt_node
+      - nav2_path_longer_on_approach_bt_node
+      - nav2_wait_cancel_bt_node
+      - nav2_spin_cancel_bt_node
+      - nav2_back_up_cancel_bt_node
+      - nav2_assisted_teleop_cancel_bt_node
+      - nav2_drive_on_heading_cancel_bt_node
+      - nav2_is_battery_charging_condition_bt_node
+
+bt_navigator_navigate_through_poses_rclcpp_node:
+  ros__parameters:
+    use_sim_time: false
+
+bt_navigator_navigate_to_pose_rclcpp_node:
+  ros__parameters:
+    use_sim_time: false
+
+behavior_server:
+  ros__parameters:
+    use_sim_time: false
+    costmap_topic: local_costmap/costmap_raw
+    footprint_topic: local_costmap/published_footprint
+    cycle_frequency: 10.0
+    behavior_plugins: ["spin", "backup", "drive_on_heading", "assisted_teleop", "wait"]
+    spin:
+      plugin: "nav2_behaviors/Spin"
+    backup:
+      plugin: "nav2_behaviors/BackUp"
+    drive_on_heading:
+      plugin: "nav2_behaviors/DriveOnHeading"
+    wait:
+      plugin: "nav2_behaviors/Wait"
+    assisted_teleop:
+      plugin: "nav2_behaviors/AssistedTeleop"
+    global_frame: odom
+    robot_base_frame: base_link
+    transform_tolerance: 0.5     # 跨 WiFi,比原版 0.1 放寬
+    simulate_ahead_time: 2.0
+    # recovery(spin / backup)用的自轉速度,和 controller 的速度是各自獨立的 ——
+    # 這是「★ 改速度要動的三個地方」的第 3 個。max 跟著 FollowPath 的
+    # max_vel_theta 一起提到 1.5;min 原版 0.4rad/s 對這台小車偏快(min 太大會讓
+    # 小角度修正變成猛甩),降到 0.3。
+    max_rotational_vel: 0.80
+    min_rotational_vel: 0.3
+    rotational_acc_lim: 3.0
+
+smoother_server:
+  ros__parameters:
+    use_sim_time: false
+    smoother_plugins: ["simple_smoother"]
+    simple_smoother:
+      plugin: "nav2_smoother::SimpleSmoother"
+      tolerance: 1.0e-10
+      max_its: 1000
+      do_refinement: True
+
+waypoint_follower:
+  ros__parameters:
+    use_sim_time: false
+    loop_rate: 20
+    stop_on_failure: false
+    waypoint_task_executor_plugin: "wait_at_waypoint"
+    wait_at_waypoint:
+      plugin: "nav2_waypoint_follower::WaitAtWaypoint"
+      enabled: True
+      waypoint_pause_duration: 200
+
+velocity_smoother:
+  ros__parameters:
+    use_sim_time: false
+    smoothing_frequency: 20.0
+    scale_velocities: False
+    feedback: "OPEN_LOOP"        # 不回讀 odom(這台 odom 本身有 scale 誤差,回讀只會更亂)
+    # 三個元素 = [x, y, theta]。y 不再是 0 —— 這是麥克納姆的橫移上限。
+    #
+    # ★ 這裡是「改速度要動的三個地方」的第 2 個,也是最容易漏掉的一個:smoother
+    #   在送出 /cmd_vel 前會把指令夾回這裡的上限,而且夾掉不會有任何 log。所以這
+    #   四行必須和 FollowPath 的 max_vel_x / max_vel_y / max_vel_theta 與
+    #   acc_lim_* / decel_lim_* 保持一致 —— 只改 FollowPath 的話,車速完全不會變,
+    #   而你會以為參數沒生效而去亂調別的東西。
+    max_velocity: [0.35, 0.14, 0.80]
+    min_velocity: [-0.35, -0.14, -0.80]
+    max_accel: [1.5, 1.5, 3.0]
+    max_decel: [-2.0, -2.0, -3.0]
+    odom_topic: "odom"
+    odom_duration: 0.1
+    deadband_velocity: [0.0, 0.0, 0.0]
+    velocity_timeout: 1.0
+
+robot_state_publisher:
+  ros__parameters:
+    use_sim_time: false
+
+# ===========================================================================
+# 附錄:想改用 MPPI 局部規劃器的話
+#
+# MPPI 的 motion_model 直接支援 "Omni",對麥克納姆比 DWB 合適得多:在窄走道裡
+# 「邊前進邊側移貼齊路徑」是它的強項,而 DWB 就算開了 vy 取樣,critic 的結構
+# 還是偏好轉頭而不是橫移。迷宮裡差別會很明顯。
+#
+# 但要先確認跑 nav2 的那台機器吃得下:
+#   2026-07-28 在 Pi 4(aarch64 / Cortex-A72)實測,plugin 一載入就 SIGILL
+#   (nav2_container process died, exit code -4),log 最後一行停在
+#   "Created controller : FollowPath of type nav2_mppi_controller::MPPIController"。
+#   原因是 apt 裝的 arm64 binary 用到那顆 CPU 沒有的指令,不是參數寫錯 ——
+#   參數改成什麼都一樣會崩。x86_64 的 PC 沒這個問題(nav2 本來就該跑在 PC 上)。
+#   換過去之後如果看到一樣的 exit code -4,就是踩到這件事,換回 DWB。
+#
+# 換法:把上面 controller_server 裡整個 FollowPath 區塊換成下面這段(去掉註解 #)。
+#
+#     FollowPath:
+#       plugin: "nav2_mppi_controller::MPPIController"
+#       motion_model: "Omni"       # <<< 麥克納姆的關鍵一行(另有 DiffDrive / Ackermann)
+#       time_steps: 40             # 40 × 0.05s = 2.0s 預測時域
+#       model_dt: 0.05             # 對齊 controller_frequency 20Hz
+#       batch_size: 1000           # 官方建議 2000;走道短、時域短,1000 夠用且省一半 CPU
+#       iteration_count: 1
+#       # 取樣噪聲標準差。要比 v*_max 小一截,否則大半軌跡會被速度上限截掉。
+#       vx_std: 0.10
+#       vy_std: 0.10
+#       wz_std: 0.40
+#       vx_max: 0.20
+#       vx_min: -0.15
+#       vy_max: 0.15
+#       wz_max: 1.0
+#       prune_distance: 0.8        # 只看前方 0.8m 路徑;轉角密,看太遠會被誤導
+#       transform_tolerance: 0.5   # 跨 WiFi 的 TF
+#       temperature: 0.3
+#       gamma: 0.015
+#       reset_period: 1.0
+#       regenerate_noises: false   # false = 重用噪聲樣本省 CPU;抖動明顯時改 true
+#       visualize: false           # true 會把上千條候選軌跡發到 RViz,只在調參時開
+#       TrajectoryVisualizer:
+#         trajectory_step: 5
+#         time_step: 3
+#       AckermannConstraints:
+#         min_turning_r: 0.2       # Omni 用不到,但參數要在
+#       # 和官方 omni 建議的差別:
+#       #   - 拿掉 PreferForwardCritic:它懲罰非前進方向的運動,正好把橫移否決掉。
+#       #   - 加上 TwirlingCritic:懲罰不必要的自轉 → 逼它用橫移解決而不是先轉再走。
+#       critics: ["ConstraintCritic", "CostCritic", "GoalCritic", "GoalAngleCritic",
+#                 "PathAlignCritic", "PathFollowCritic", "PathAngleCritic", "TwirlingCritic"]
+#       ConstraintCritic:
+#         enabled: true
+#         cost_power: 1
+#         cost_weight: 4.0
+#       CostCritic:
+#         enabled: true
+#         cost_power: 1
+#         cost_weight: 4.0
+#         critical_cost: 300.0
+#         consider_footprint: false
+#         collision_cost: 1000000.0
+#         near_goal_distance: 0.5
+#         trajectory_point_step: 2
+#       GoalCritic:
+#         enabled: true
+#         cost_power: 1
+#         cost_weight: 5.0
+#         threshold_to_consider: 0.5
+#       GoalAngleCritic:
+#         enabled: true
+#         cost_power: 1
+#         cost_weight: 3.0
+#         threshold_to_consider: 0.3
+#       PathAlignCritic:
+#         enabled: true
+#         cost_power: 1
+#         cost_weight: 14.0
+#         max_path_occupancy_ratio: 0.05
+#         trajectory_point_step: 4
+#         threshold_to_consider: 0.4
+#         offset_from_furthest: 20
+#         use_path_orientations: false
+#       PathFollowCritic:
+#         enabled: true
+#         cost_power: 1
+#         cost_weight: 5.0
+#         offset_from_furthest: 5
+#         threshold_to_consider: 0.4
+#       PathAngleCritic:
+#         enabled: true
+#         cost_power: 1
+#         cost_weight: 2.0
+#         offset_from_furthest: 4
+#         threshold_to_consider: 0.5
+#         max_angle_to_furthest: 1.0
+#         forward_preference: false   # holonomic:不強迫車頭朝著路徑方向
+#       TwirlingCritic:
+#         enabled: true
+#         cost_power: 1
+#         cost_weight: 10.0
+# ===========================================================================

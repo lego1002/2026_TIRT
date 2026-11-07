@@ -1,0 +1,111 @@
+/**:
+  ros__parameters:
+    robot_description: "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<!-- This URDF\
+      \ was automatically created by SolidWorks to URDF Exporter! Originally created\
+      \ by Stephen Brawner (brawner@gmail.com) \n     Commit Version: 1.6.0-4-g7f85cfe\
+      \  Build Version: 1.6.7995.38578\n     For more information, please see http://wiki.ros.org/sw_urdf_exporter\
+      \ -->\n<robot\n  name=\"CAR_ASSEMBLE_URDF\">\n  <link\n    name=\"base_link\"\
+      >\n    <inertial>\n      <origin\n        xyz=\"-0.00603422464974022 -0.0210901298715232\
+      \ 0.0524911766865027\"\n        rpy=\"0 0 0\" />\n      <mass\n        value=\"\
+      0.190388769252238\" />\n      <inertia\n        ixx=\"6.83150927298204E-05\"\
+      \n        ixy=\"-3.24400507185233E-09\"\n        ixz=\"8.52921062213978E-09\"\
+      \n        iyy=\"9.49074699408812E-05\"\n        iyz=\"6.22482238337034E-09\"\
+      \n        izz=\"4.46982601879695E-05\" />\n    </inertial>\n    <visual>\n \
+      \     <origin\n        xyz=\"0 0 0\"\n        rpy=\"0 0 0\" />\n      <geometry>\n\
+      \        <mesh\n          filename=\"package://car_assemble_description/meshes/base_link.STL\"\
+      \ />\n      </geometry>\n      <material\n        name=\"\">\n        <color\n\
+      \          rgba=\"0.792156862745098 0.819607843137255 0.933333333333333 1\"\
+      \ />\n      </material>\n    </visual>\n    <collision>\n      <origin\n   \
+      \     xyz=\"0 0 0\"\n        rpy=\"0 0 0\" />\n      <geometry>\n        <mesh\n\
+      \          filename=\"package://car_assemble_description/meshes/base_link.STL\"\
+      \ />\n      </geometry>\n    </collision>\n  </link>\n  <link\n    name=\"lidar_link\"\
+      >\n    <inertial>\n      <origin\n        xyz=\"3.86913161717906E-08 -0.018461643645472\
+      \ 7.75735908079955E-05\"\n        rpy=\"0 0 0\" />\n      <mass\n        value=\"\
+      0.10251226954949\" />\n      <inertia\n        ixx=\"3.53114472561608E-05\"\n\
+      \        ixy=\"2.08391601834097E-11\"\n        ixz=\"-2.07482159238868E-11\"\
+      \n        iyy=\"4.34970025566499E-05\"\n        iyz=\"-1.05300166221831E-07\"\
+      \n        izz=\"3.50508835018759E-05\" />\n    </inertial>\n    <visual>\n \
+      \     <origin\n        xyz=\"0 0 0\"\n        rpy=\"0 0 0\" />\n      <geometry>\n\
+      \        <mesh\n          filename=\"package://car_assemble_description/meshes/lidar_link.STL\"\
+      \ />\n      </geometry>\n      <material\n        name=\"\">\n        <color\n\
+      \          rgba=\"0.792156862745098 0.819607843137255 0.933333333333333 1\"\
+      \ />\n      </material>\n    </visual>\n    <collision>\n      <origin\n   \
+      \     xyz=\"0 0 0\"\n        rpy=\"0 0 0\" />\n      <geometry>\n        <mesh\n\
+      \          filename=\"package://car_assemble_description/meshes/lidar_link.STL\"\
+      \ />\n      </geometry>\n    </collision>\n  </link>\n  <joint\n    name=\"\
+      lidar_joint\"\n    type=\"fixed\">\n    <origin\n      xyz=\"0.0088203 -0.061\
+      \ 0.04267\"\n      rpy=\"-1.5708 0 -1.5708\" />\n    <parent\n      link=\"\
+      base_link\" />\n    <child\n      link=\"lidar_link\" />\n    <axis\n      xyz=\"\
+      0 0 0\" />\n  </joint>\n  <link\n    name=\"front_left_wheel_link\">\n    <inertial>\n\
+      \      <origin\n        xyz=\"-3.52956049873288E-08 0.0124581724752201 -1.03747976459845E-08\"\
+      \n        rpy=\"0 0 0\" />\n      <mass\n        value=\"0.0267991117024946\"\
+      \ />\n      <inertia\n        ixx=\"2.51782179625165E-06\"\n        ixy=\"-1.99045591652718E-12\"\
+      \n        ixz=\"-5.01991124273091E-12\"\n        iyy=\"4.28010615931319E-06\"\
+      \n        iyz=\"-1.36769997324271E-12\"\n        izz=\"2.51785499963632E-06\"\
+      \ />\n    </inertial>\n    <visual>\n      <origin\n        xyz=\"0 0 0\"\n\
+      \        rpy=\"0 0 0\" />\n      <geometry>\n        <mesh\n          filename=\"\
+      package://car_assemble_description/meshes/front_left_wheel_link.STL\" />\n \
+      \     </geometry>\n      <material\n        name=\"\">\n        <color\n   \
+      \       rgba=\"0.752941176470588 0.752941176470588 0.752941176470588 1\" />\n\
+      \      </material>\n    </visual>\n    <collision>\n      <origin\n        xyz=\"\
+      0 0 0\"\n        rpy=\"0 0 0\" />\n      <geometry>\n        <mesh\n       \
+      \   filename=\"package://car_assemble_description/meshes/front_left_wheel_link.STL\"\
+      \ />\n      </geometry>\n    </collision>\n  </link>\n  <joint\n    name=\"\
+      front_left_wheel_joint\"\n    type=\"continuous\">\n    <origin\n      xyz=\"\
+      -0.052635 -0.092 -0.041858\"\n      rpy=\"-3.1416 0 0\" />\n    <parent\n  \
+      \    link=\"base_link\" />\n    <child\n      link=\"front_left_wheel_link\"\
+      \ />\n    <axis\n      xyz=\"0 1 0\" />\n  </joint>\n  <link\n    name=\"rear_left_wheel_link\"\
+      >\n    <inertial>\n      <origin\n        xyz=\"-3.47914715093101E-08 0.012458172486175\
+      \ -1.02828570519575E-08\"\n        rpy=\"0 0 0\" />\n      <mass\n        value=\"\
+      0.0267991118389794\" />\n      <inertia\n        ixx=\"2.5178217761727E-06\"\
+      \n        ixy=\"-1.95456317954936E-12\"\n        ixz=\"-4.986824891805E-12\"\
+      \n        iyy=\"4.28010619090167E-06\"\n        iyz=\"-1.42223968731858E-12\"\
+      \n        izz=\"2.51785505230012E-06\" />\n    </inertial>\n    <visual>\n \
+      \     <origin\n        xyz=\"0 0 0\"\n        rpy=\"0 0 0\" />\n      <geometry>\n\
+      \        <mesh\n          filename=\"package://car_assemble_description/meshes/rear_left_wheel_link.STL\"\
+      \ />\n      </geometry>\n      <material\n        name=\"\">\n        <color\n\
+      \          rgba=\"0.752941176470588 0.752941176470588 0.752941176470588 1\"\
+      \ />\n      </material>\n    </visual>\n    <collision>\n      <origin\n   \
+      \     xyz=\"0 0 0\"\n        rpy=\"0 0 0\" />\n      <geometry>\n        <mesh\n\
+      \          filename=\"package://car_assemble_description/meshes/rear_left_wheel_link.STL\"\
+      \ />\n      </geometry>\n    </collision>\n  </link>\n  <joint\n    name=\"\
+      rear_left_wheel_joint\"\n    type=\"continuous\">\n    <origin\n      xyz=\"\
+      0.043365 -0.096 -0.041858\"\n      rpy=\"0 -0.4646 3.1416\" />\n    <parent\n\
+      \      link=\"base_link\" />\n    <child\n      link=\"rear_left_wheel_link\"\
+      \ />\n    <axis\n      xyz=\"0 1 0\" />\n  </joint>\n  <link\n    name=\"front_right_wheel_link\"\
+      >\n    <inertial>\n      <origin\n        xyz=\"-3.52956050705955E-08 -0.00554185252478013\
+      \ -1.03747979027236E-08\"\n        rpy=\"0 0 0\" />\n      <mass\n        value=\"\
+      0.0267991117024945\" />\n      <inertia\n        ixx=\"2.51782179625165E-06\"\
+      \n        ixy=\"-1.99045590390431E-12\"\n        ixz=\"-5.01991124296015E-12\"\
+      \n        iyy=\"4.28010615931319E-06\"\n        iyz=\"-1.36769997270612E-12\"\
+      \n        izz=\"2.51785499963631E-06\" />\n    </inertial>\n    <visual>\n \
+      \     <origin\n        xyz=\"0 0 0\"\n        rpy=\"0 0 0\" />\n      <geometry>\n\
+      \        <mesh\n          filename=\"package://car_assemble_description/meshes/front_right_wheel_link.STL\"\
+      \ />\n      </geometry>\n      <material\n        name=\"\">\n        <color\n\
+      \          rgba=\"0.752941176470588 0.752941176470588 0.752941176470588 1\"\
+      \ />\n      </material>\n    </visual>\n    <collision>\n      <origin\n   \
+      \     xyz=\"0 0 0\"\n        rpy=\"0 0 0\" />\n      <geometry>\n        <mesh\n\
+      \          filename=\"package://car_assemble_description/meshes/front_right_wheel_link.STL\"\
+      \ />\n      </geometry>\n    </collision>\n  </link>\n  <joint\n    name=\"\
+      front_right_wheel_joint\"\n    type=\"continuous\">\n    <origin\n      xyz=\"\
+      -0.052725 0 -0.041858\"\n      rpy=\"3.1416 0 -3.1416\" />\n    <parent\n  \
+      \    link=\"base_link\" />\n    <child\n      link=\"front_right_wheel_link\"\
+      \ />\n    <axis\n      xyz=\"0 1 0\" />\n  </joint>\n  <link\n    name=\"rear_right_wheel_link\"\
+      >\n    <inertial>\n      <origin\n        xyz=\"-3.52956050636566E-08 -0.00554185252478064\
+      \ -1.03747979721125E-08\"\n        rpy=\"0 0 0\" />\n      <mass\n        value=\"\
+      0.0267991117024945\" />\n      <inertia\n        ixx=\"2.51782179625165E-06\"\
+      \n        ixy=\"-1.99045590374472E-12\"\n        ixz=\"-5.0199112415942E-12\"\
+      \n        iyy=\"4.28010615931318E-06\"\n        iyz=\"-1.36769997283475E-12\"\
+      \n        izz=\"2.51785499963631E-06\" />\n    </inertial>\n    <visual>\n \
+      \     <origin\n        xyz=\"0 0 0\"\n        rpy=\"0 0 0\" />\n      <geometry>\n\
+      \        <mesh\n          filename=\"package://car_assemble_description/meshes/rear_right_wheel_link.STL\"\
+      \ />\n      </geometry>\n      <material\n        name=\"\">\n        <color\n\
+      \          rgba=\"0.752941176470588 0.752941176470588 0.752941176470588 1\"\
+      \ />\n      </material>\n    </visual>\n    <collision>\n      <origin\n   \
+      \     xyz=\"0 0 0\"\n        rpy=\"0 0 0\" />\n      <geometry>\n        <mesh\n\
+      \          filename=\"package://car_assemble_description/meshes/rear_right_wheel_link.STL\"\
+      \ />\n      </geometry>\n    </collision>\n  </link>\n  <joint\n    name=\"\
+      rear_right_wheel_joint\"\n    type=\"continuous\">\n    <origin\n      xyz=\"\
+      0.043275 0 -0.041858\"\n      rpy=\"-3.1416 0 3.1416\" />\n    <parent\n   \
+      \   link=\"base_link\" />\n    <child\n      link=\"rear_right_wheel_link\"\
+      \ />\n    <axis\n      xyz=\"0 1 0\" />\n  </joint>\n</robot>"

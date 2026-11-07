@@ -1,0 +1,6 @@
+[WARN] [1794019741.834895454] []: Old-style arguments are deprecated; see --help for new-style arguments
+[INFO] [1794019741.947977726] [base_link_to_laser]: Spinning until stopped - publishing transform
+translation: ('0.014000', '-0.014000', '0.109000')
+rotation: ('0.000000', '0.000000', '0.993566', '0.113253')
+from 'base_link' to 'laser_frame'
+[INFO] [1794020008.668753168] [rclcpp]: signal_handler(SIGINT/SIGTERM)

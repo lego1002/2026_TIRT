@@ -1,0 +1,11 @@
+/home/lego/2026_TIRT/dds/run_discovery_server.sh
+/home/lego/2026_TIRT/run_slam.sh use_rviz:=false
+/home/lego/2026_TIRT/run_robot.sh cmd_linear_scale:=6.54 cmd_angular_scale:=7.43
+/home/lego/2026_TIRT/dds/run_discovery_server.sh
+/home/lego/2026_TIRT/run_slam.sh use_rviz:=false
+/home/lego/2026_TIRT/dds/run_discovery_server.sh
+/home/lego/2026_TIRT/run_robot.sh cmd_linear_scale:=6.54 cmd_angular_scale:=7.43
+/home/lego/2026_TIRT/run_nav2.sh rzce use_rviz:=false
+/home/lego/2026_TIRT/dds/run_discovery_server.sh
+/home/lego/2026_TIRT/run_nav2.sh rzce use_rviz:=false
+/home/lego/2026_TIRT/run_robot.sh cmd_linear_scale:=6.54 cmd_angular_scale:=7.43

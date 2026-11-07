@@ -1,0 +1,2 @@
+[INFO] [1794012242.018998674] [oled_status]: OLED status up: ssd1306 128x64 on spi0.0 DC=GPIO24 RST=GPIO25
+[INFO] [1794019181.541179136] [oled_status]: pack voltage read directly from the board: 12.45 V (no driver running)

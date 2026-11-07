@@ -1,0 +1,4 @@
+captured: Sat Nov  7 11:22:37 AM CST 2026
+ 11:22:37 up 43 min,  3 users,  load average: 0.54, 0.39, 0.58
+throttled=0x0
+temp=47.2'C

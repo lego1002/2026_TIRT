@@ -1,0 +1,101 @@
+diff --git a/ominibot_driver/ominibot_driver/teleop_node.py b/ominibot_driver/ominibot_driver/teleop_node.py
+index 0caa9ac..b5f8dc3 100644
+--- a/ominibot_driver/ominibot_driver/teleop_node.py
++++ b/ominibot_driver/ominibot_driver/teleop_node.py
+@@ -27,6 +27,7 @@ the command (see driver_node.py).
+ import math
+ import select
+ import sys
++import time
+ import termios
+ import tty
+ 
+@@ -63,6 +64,22 @@ def get_key(settings, timeout):
+     return key
+ 
+ 
++def slew(current, target, accel, decel, dt):
++    """Step `current` toward `target`, limited to accel (speeding up) / decel (slowing).
++
++    A reversal first brakes through zero at `decel`, then speeds up at `accel`.
++    """
++    if current * target < 0.0 or abs(target) < abs(current):
++        step = decel * dt
++        goal = 0.0 if current * target < 0.0 else target
++    else:
++        step = accel * dt
++        goal = target
++    if abs(goal - current) <= step:
++        return goal
++    return current + step if goal > current else current - step
++
++
+ class MecanumTeleop(Node):
+     def __init__(self):
+         super().__init__('mecanum_teleop')
+@@ -71,12 +88,24 @@ class MecanumTeleop(Node):
+         self.declare_parameter('linear_max', 1.5)
+         self.declare_parameter('angular_max', 4.0)
+         self.declare_parameter('publish_rate', 20.0)   # Hz, also watchdog re-send
++        # Ramp limits. Without them a key press asks for 0 -> full speed within one
++        # 50 ms message (0.2 m/s = 4 m/s^2), which breaks the mecanum rollers loose.
++        # The wheels then spin freely, /odom counts distance the robot never travelled
++        # (the board reports wheel speed, so it cannot see the slip), and the map shifts.
++        self.declare_parameter('linear_accel', 0.6)    # m/s^2
++        self.declare_parameter('linear_decel', 1.0)    # m/s^2, ~2 cm to stop from 0.2 m/s
++        self.declare_parameter('angular_accel', 2.0)   # rad/s^2
++        self.declare_parameter('angular_decel', 3.0)   # rad/s^2
+ 
+         self.lin = self.get_parameter('linear_speed').value
+         self.ang = self.get_parameter('angular_speed').value
+         self.lin_max = self.get_parameter('linear_max').value
+         self.ang_max = self.get_parameter('angular_max').value
+         self.rate = self.get_parameter('publish_rate').value
++        self.lin_acc = self.get_parameter('linear_accel').value
++        self.lin_dec = self.get_parameter('linear_decel').value
++        self.ang_acc = self.get_parameter('angular_accel').value
++        self.ang_dec = self.get_parameter('angular_decel').value
+ 
+         # BEST_EFFORT depth-1, matching ominibot_driver's cmd_vel subscription. A
+         # teleop stream is "latest value wins": if a sample is lost, the next one is
+@@ -91,13 +120,17 @@ class MecanumTeleop(Node):
+                        reliability=ReliabilityPolicy.BEST_EFFORT))
+         self.tx = self.ty = 0.0   # translation direction, in {-1, 0, 1}
+         self.tz = 0.0             # rotation direction, in {-1, 0, 1}
++        self.vx = self.vy = self.wz = 0.0   # ramped velocity actually published
+ 
+-    def _twist(self):
+-        t = Twist()
++    def _twist(self, dt):
+         norm = DIAG if (self.tx and self.ty) else 1.0
+-        t.linear.x = self.tx * self.lin * norm
+-        t.linear.y = self.ty * self.lin * norm
+-        t.angular.z = self.tz * self.ang
++        self.vx = slew(self.vx, self.tx * self.lin * norm, self.lin_acc, self.lin_dec, dt)
++        self.vy = slew(self.vy, self.ty * self.lin * norm, self.lin_acc, self.lin_dec, dt)
++        self.wz = slew(self.wz, self.tz * self.ang, self.ang_acc, self.ang_dec, dt)
++        t = Twist()
++        t.linear.x = self.vx
++        t.linear.y = self.vy
++        t.angular.z = self.wz
+         return t
+ 
+     def _apply(self, key):
+@@ -123,11 +156,16 @@ class MecanumTeleop(Node):
+     def run(self, settings):
+         print(HELP)
+         timeout = 1.0 / self.rate
++        last = time.monotonic()
+         while rclpy.ok():
+             key = get_key(settings, timeout)
+             if key and not self._apply(key):
+                 break
+-            self.pub.publish(self._twist())
++            now = time.monotonic()
++            # A key press returns early, so dt varies; the cap stops a stalled loop
++            # from turning into one big velocity jump.
++            self.pub.publish(self._twist(min(now - last, 0.1)))
++            last = now
+ 
+ 
+ def main(args=None):
